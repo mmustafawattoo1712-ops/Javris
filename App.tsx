@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Mic, Power, Activity, Terminal, Fingerprint, ScanFace, Globe, ShieldCheck } from 'lucide-react';
+import { Mic, Power, Activity, Terminal, Fingerprint, ScanFace, Globe, ShieldCheck, Lock, LogIn } from 'lucide-react';
 import { useJarvis } from './hooks/useJarvis';
 import { useWakeWord } from './hooks/useWakeWord';
 import { ArcReactor } from './components/ArcReactor';
@@ -8,6 +8,7 @@ import { SystemMonitor } from './components/SystemMonitor';
 import { HomeScreen } from './components/HomeScreen';
 import { HolographicHud } from './components/HolographicHud';
 import { ActiveAppWindow } from './components/ActiveAppWindow';
+import { HolographicDisplay } from './components/HolographicDisplay';
 import { ConnectionState } from './types';
 
 const App: React.FC = () => {
@@ -27,7 +28,8 @@ const App: React.FC = () => {
       toggleSystemSetting, 
       closeApplication, 
       openApplication, 
-      toggleHome 
+      toggleHome,
+      unlockSystem
   } = useJarvis();
 
   const [showLogs, setShowLogs] = useState(false);
@@ -39,14 +41,14 @@ const App: React.FC = () => {
 
   // Wake Word Handler
   const handleWake = useCallback(() => {
-      if (connectionState === ConnectionState.DISCONNECTED && !isConnecting) {
+      if (connectionState === ConnectionState.DISCONNECTED && !isConnecting && deviceState.systemStatus === 'online') {
           // Play a system sound if possible
           const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_100KB_MP3.mp3'); // Placeholder beep
           audio.volume = 0.2;
           audio.play().catch(() => {});
           connect();
       }
-  }, [connectionState, isConnecting, connect]);
+  }, [connectionState, isConnecting, connect, deviceState.systemStatus]);
 
   const { isListening, startListening, stopListening } = useWakeWord(handleWake);
 
@@ -68,10 +70,10 @@ const App: React.FC = () => {
   useEffect(() => {
       if (isConnected) {
           stopListening();
-      } else if (hasInteracted) {
+      } else if (hasInteracted && deviceState.systemStatus === 'online') {
           startListening();
       }
-  }, [isConnected, hasInteracted, startListening, stopListening]);
+  }, [isConnected, hasInteracted, startListening, stopListening, deviceState.systemStatus]);
 
   // *** AUTO-RECOVERY LOGIC ***
   // When user switches back to this tab (e.g. from WhatsApp), ensure UI is reset
@@ -86,6 +88,52 @@ const App: React.FC = () => {
       document.addEventListener('visibilitychange', handleVisibilityChange);
       return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [resetInterface]);
+
+  // --- SYSTEM SHUTDOWN VISUAL ---
+  if (deviceState.systemStatus === 'shutdown') {
+      return (
+          <div className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-pointer" onClick={unlockSystem}>
+             {/* Subtle power indicator to show it's "off" but recoverable */}
+             <div className="w-1 h-1 bg-gray-900 rounded-full animate-pulse" />
+          </div>
+      );
+  }
+
+  // --- LOCK SCREEN VISUAL ---
+  if (deviceState.systemStatus === 'locked') {
+      return (
+          <div className="fixed inset-0 bg-black z-[9999] flex flex-col items-center justify-center text-cyan-500 font-mono relative overflow-hidden">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.1)_0%,transparent_70%)] opacity-50" />
+              
+              <div className="z-10 flex flex-col items-center gap-8">
+                  <div className="p-6 border-2 border-cyan-500/30 rounded-full bg-black/50 backdrop-blur-md shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+                      <Lock className="w-12 h-12 text-cyan-400" />
+                  </div>
+                  
+                  <div className="text-center">
+                       <h1 className="text-6xl font-thin tracking-tighter text-white mb-2">
+                           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                       </h1>
+                       <p className="text-sm tracking-[0.5em] text-cyan-700">SYSTEM LOCKED</p>
+                  </div>
+
+                  <button 
+                    onClick={unlockSystem}
+                    className="mt-12 group flex flex-col items-center gap-2 opacity-70 hover:opacity-100 transition-opacity"
+                  >
+                      <Fingerprint className="w-8 h-8 text-cyan-400 animate-pulse" />
+                      <span className="text-[10px] tracking-widest">TAP TO AUTHENTICATE</span>
+                  </button>
+              </div>
+
+              {/* Bottom security footer */}
+              <div className="absolute bottom-8 text-[8px] text-gray-700 tracking-widest flex gap-4">
+                  <span>BIOMETRICS: ACTIVE</span>
+                  <span>ENCRYPTION: AES-256</span>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-black text-cyan-400 relative overflow-hidden flex flex-col items-center justify-center selection:bg-cyan-500/30 perspective-container font-mono">
@@ -134,6 +182,9 @@ const App: React.FC = () => {
             {/* HOLOGRAPHIC HUD COMPONENT */}
             <HolographicHud isConnected={isConnected} />
 
+            {/* ADVANCED HOLOGRAPHIC DISPLAY (SCAN/HACK/MAPS) */}
+            <HolographicDisplay mode={deviceState.simulationMode} />
+
             {/* TOP HEADER HUD */}
             <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start z-50 pointer-events-none">
                 <div className="flex flex-col gap-1">
@@ -167,7 +218,7 @@ const App: React.FC = () => {
                 )}
 
                 {/* CENTRAL VISUALIZER */}
-                <div className="relative mb-8 transform transition-all duration-700">
+                <div className={`relative mb-8 transform transition-all duration-700 ${deviceState.simulationMode !== 'none' ? 'scale-75 opacity-50 blur-sm' : 'scale-100'}`}>
                     <ArcReactor volume={volume} isActive={isConnected} />
                     
                     {/* Standby Pulse when not connected */}

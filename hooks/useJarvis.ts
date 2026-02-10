@@ -11,25 +11,11 @@ const OUTPUT_SAMPLE_RATE = 24000;
 
 // Tool Definitions
 const tools: FunctionDeclaration[] = [
+  // --- EXISTING BASIC TOOLS ---
   {
     name: 'get_device_status',
     description: 'Get the current status of the mobile device including battery and charging state.',
-    parameters: { 
-        type: Type.OBJECT, 
-        properties: {
-            check_reason: { type: Type.STRING, description: "Reason for checking status" }
-        } 
-    }
-  },
-  {
-    name: 'get_current_location',
-    description: 'Get the precise GPS coordinates of the device.',
-    parameters: { 
-        type: Type.OBJECT, 
-        properties: {
-            precision: { type: Type.STRING, description: "Desired precision (high/low)" }
-        } 
-    }
+    parameters: { type: Type.OBJECT, properties: { check_reason: { type: Type.STRING } } }
   },
   {
     name: 'toggle_system_setting',
@@ -37,89 +23,70 @@ const tools: FunctionDeclaration[] = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        setting: { type: Type.STRING, enum: ['wifi', 'bluetooth', 'flashlight'], description: 'The setting to toggle' },
-        action: { type: Type.STRING, enum: ['on', 'off'], description: 'Desired state' }
+        setting: { type: Type.STRING, enum: ['wifi', 'bluetooth', 'flashlight'] },
+        action: { type: Type.STRING, enum: ['on', 'off'] }
       },
       required: ['setting', 'action']
     }
   },
   {
     name: 'control_installed_app',
-    description: 'Execute a specific action inside an installed application (Message, Call, Play, Search, Open Settings, Set Alarm, Timer).',
+    description: 'Execute a specific action inside an installed application.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        app_name: { 
-          type: Type.STRING, 
-          enum: [
-            'whatsapp', 'youtube', 'instagram', 'facebook', 'tiktok', 'twitter', 'spotify',
-            'camera', 'maps', 'messages', 'browser', 'phone', 'gallery', 'gmail',
-            'clock', 'calendar', 'calculator', 'notes', 'file_manager', 'play_store',
-            'settings_main', 'settings_wifi', 'settings_bluetooth', 'settings_display', 
-            'settings_sound', 'settings_battery', 'settings_data', 'settings_developer'
-          ], 
-          description: 'The target application or system menu.' 
-        },
-        action_type: {
-            type: Type.STRING,
-            enum: ['open', 'search', 'message', 'call', 'play', 'navigate', 'set_alarm', 'set_timer', 'create_note', 'create_event'],
-            description: 'The type of action to perform.'
-        },
-        payload: {
-          type: Type.STRING,
-          description: 'The content (Search query, Message body, Phone number, Location, Alarm Time, Note text).'
-        }
+        app_name: { type: Type.STRING },
+        action_type: { type: Type.STRING, enum: ['open', 'search', 'message', 'call', 'play'] },
+        payload: { type: Type.STRING }
       },
       required: ['app_name', 'action_type']
     }
   },
   {
     name: 'close_application',
-    description: 'Close the currently running application and return to the main Jarvis interface.',
+    description: 'Close current app/visualization and return to main interface.',
+    parameters: { type: Type.OBJECT, properties: { app_name: { type: Type.STRING } } }
+  },
+  
+  // --- NEW ADVANCED MOVIE TOOLS ---
+  {
+    name: 'scan_target',
+    description: 'Initiate a biometric or environmental scan (Vital signs, DNA, Threat assessment).',
     parameters: { 
         type: Type.OBJECT, 
-        properties: {
-            app_name: { type: Type.STRING, description: "Name of app to close (optional)" }
+        properties: { 
+            target_type: { type: Type.STRING, enum: ['biological', 'environmental'], description: 'What to scan' }
+        },
+        required: ['target_type']
+    }
+  },
+  {
+    name: 'analyze_schematic',
+    description: 'Project a 3D wireframe analysis of technology (Suit diagnostics, Arc Reactor status, Weaponry).',
+    parameters: { 
+        type: Type.OBJECT, 
+        properties: { 
+            object_name: { type: Type.STRING, description: 'The tech to analyze (e.g., Mark 85, Arc Reactor)' }
         } 
     }
   },
   {
-    name: 'scan_environment',
-    description: 'Perform a visual or system scan of the surrounding environment.',
+    name: 'hack_network',
+    description: 'Initiate a brute-force network infiltration or packet decryption sequence.',
     parameters: { 
         type: Type.OBJECT, 
-        properties: {
-            scan_type: { type: Type.STRING, description: "Type of scan (visual/system)" }
+        properties: { 
+            target_system: { type: Type.STRING, description: 'Target server or firewall' }
         } 
     }
   },
   {
-    name: 'vibrate_device',
-    description: 'Vibrate the device for tactile feedback.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        duration: { type: Type.NUMBER, description: 'Duration in milliseconds (default 500)' }
-      }
-    }
-  },
-  {
-    name: 'go_to_home_screen',
-    description: 'Minimize current windows and go to the main application grid (Home Screen).',
+    name: 'satellite_view',
+    description: 'Access orbital satellite feeds for global reconnaissance.',
     parameters: { 
         type: Type.OBJECT, 
-        properties: {
-            animate: { type: Type.BOOLEAN, description: "Show animation" }
-        } 
-    }
-  },
-  {
-    name: 'show_jarvis_interface',
-    description: 'Hide the home screen and return to the main AI visualizer interface.',
-    parameters: { 
-        type: Type.OBJECT, 
-        properties: {
-             mode: { type: Type.STRING, description: "Interface mode" }
+        properties: { 
+            region: { type: Type.STRING, description: 'Region to focus on' }
         } 
     }
   }
@@ -130,9 +97,8 @@ export const useJarvis = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState<number>(0);
-  const [activeApp, setActiveApp] = useState<string | null>(null); // Track which app is currently "hacked"
+  const [activeApp, setActiveApp] = useState<string | null>(null); 
   
-  // Simulated Device State
   const [deviceState, setDeviceState] = useState<DeviceState>({
     batteryLevel: null,
     isCharging: false,
@@ -142,59 +108,46 @@ export const useJarvis = () => {
     location: null,
     brightness: 100,
     volume: 50,
-    viewMode: 'jarvis'
+    viewMode: 'jarvis',
+    systemStatus: 'online',
+    simulationMode: 'none' // New state for holograms
   });
 
-  // Audio Contexts & Nodes
   const inputContextRef = useRef<AudioContext | null>(null);
   const outputContextRef = useRef<AudioContext | null>(null);
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  
-  // Flashlight Track Reference (Hardware Control)
   const flashlightTrackRef = useRef<MediaStreamTrack | null>(null);
-  
-  // Transcription Buffers
   const currentInputTranscription = useRef<string>('');
   const currentOutputTranscription = useRef<string>('');
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // --- HARDWARE FLASHLIGHT CONTROL ---
+  // --- HARDWARE FLASHLIGHT ---
   const toggleRealFlashlight = useCallback(async (turnOn: boolean) => {
       try {
           if (turnOn) {
-              // If we already have a track, just ensure it's on
               if (flashlightTrackRef.current) {
                   // @ts-ignore
                   await flashlightTrackRef.current.applyConstraints({ advanced: [{ torch: true }] });
                   setDeviceState(prev => ({ ...prev, flashlight: true }));
                   return;
               }
-
-              // Request camera with backend environment (Rear Camera)
-              const stream = await navigator.mediaDevices.getUserMedia({
-                  video: { facingMode: 'environment' }
-              });
-              
+              const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
               const track = stream.getVideoTracks()[0];
               const capabilities = track.getCapabilities();
-
-              // @ts-ignore Check if torch is supported
+              // @ts-ignore
               if (!capabilities.torch) {
-                  console.warn("Flashlight/Torch not supported on this device.");
+                  console.warn("Flashlight not supported.");
                   track.stop();
-                  setError("Mobile Flashlight not accessible.");
                   return;
               }
-
               flashlightTrackRef.current = track;
               // @ts-ignore
               await track.applyConstraints({ advanced: [{ torch: true }] });
               setDeviceState(prev => ({ ...prev, flashlight: true }));
-
           } else {
-              // Turn Off
               if (flashlightTrackRef.current) {
                   // @ts-ignore
                   await flashlightTrackRef.current.applyConstraints({ advanced: [{ torch: false }] });
@@ -205,177 +158,73 @@ export const useJarvis = () => {
           }
       } catch (err) {
           console.error("Flashlight Error:", err);
-          setError("Flashlight access denied. Check Camera permissions.");
       }
   }, []);
 
-  // --- CORE APP LAUNCHER LOGIC (TONY STARK EDITION) ---
+  // --- APP LAUNCHER ---
   const executeAppCommand = useCallback((appName: string, actionType: string, payload: string = '') => {
-      console.log(`[JARVIS PROTOCOL] Executing: App=${appName}, Action=${actionType}, Payload=${payload}`);
-      
       const encodedPayload = encodeURIComponent(payload);
       let targetUrl = '';
-      
-      // 1. Trigger the Visual Hacking Interface first
       setActiveApp(appName);
-
-      // *** ADVANCED INTENT LIBRARY (Optimized for Android) ***
-      // We prioritize DIRECT URI SCHEMES (like whatsapp://) over intents for faster, dialer-like opening.
+      const openPackage = (pkg: string) => `intent://#Intent;scheme=package;package=${pkg};end`;
+      
       switch (appName) {
-          // --- SOCIAL & MEDIA ---
-          case 'whatsapp':
-              if (actionType === 'message' && payload) {
-                   targetUrl = `whatsapp://send?text=${encodedPayload}`;
-              } else {
-                   targetUrl = 'whatsapp://app';
-              }
-              break;
-          
-          case 'youtube':
-              if (actionType === 'search' || actionType === 'play') {
-                  // Fallback to https if app not installed, but try vnd.youtube first via intent fallback logic or direct
-                  targetUrl = `vnd.youtube://results?search_query=${encodedPayload}`;
-              } else {
-                  targetUrl = 'vnd.youtube://';
-              }
-              break;
-
-          case 'instagram':
-              targetUrl = 'instagram://app';
-              break;
-          
-          case 'facebook': 
-              targetUrl = 'fb://facewebmodal/f?href=https://www.facebook.com';
-              break;
-          
-          case 'spotify': 
-               targetUrl = 'spotify:'; 
-               break;
-          
-          case 'twitter':
-               targetUrl = 'twitter://';
-               break;
-
-          case 'tiktok':
-               targetUrl = 'tiktok://';
-               break;
-
-          // --- COMMUNICATION ---
-          case 'phone':
-              if (actionType === 'call' && payload) targetUrl = `tel:${payload}`;
-              else targetUrl = 'tel:';
-              break;
-
-          case 'messages':
-              if (actionType === 'message' && payload) targetUrl = `sms:?body=${encodedPayload}`;
-              else targetUrl = 'sms:';
-              break;
-          
-          case 'gmail':
-              if (actionType === 'message') targetUrl = `mailto:${payload}`;
-              else targetUrl = 'googlegmail://';
-              break;
-
-          // --- UTILITIES (Deep Native Integration) ---
-          case 'clock':
-              // Clocks usually need standard Intents
-              if (actionType === 'set_alarm') {
-                  targetUrl = `intent://#Intent;action=android.intent.action.SET_ALARM;S.android.intent.extra.MESSAGE=${encodedPayload};end`;
-              } else {
-                  targetUrl = 'intent://#Intent;action=android.intent.action.SHOW_ALARMS;end';
-              }
-              break;
-          
-          case 'calendar':
-              targetUrl = 'content://com.android.calendar/time/';
-              break;
-          
-          case 'calculator': 
-              targetUrl = 'intent://#Intent;category=android.intent.category.APP_CALCULATOR;end'; 
-              break;
-          
-          case 'camera': 
-              // Try to launch camera directly
-              targetUrl = 'intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end'; 
-              break;
-          
-          case 'gallery': 
-              targetUrl = 'content://media/internal/images/media'; 
-              break;
-          
-          case 'maps': 
-              targetUrl = `geo:0,0?q=${encodedPayload || 'current location'}`; 
-              break;
-          
-          case 'browser': 
-              targetUrl = `https://www.google.com/search?q=${encodedPayload}`; 
-              break;
-          
-          case 'play_store': 
-              targetUrl = `market://search?q=${encodedPayload || 'apps'}`; 
-              break;
-
-          // --- SYSTEM SETTINGS ---
-          case 'settings_main': targetUrl = 'intent://#Intent;action=android.settings.SETTINGS;end'; break;
-          case 'settings_wifi': targetUrl = 'intent://#Intent;action=android.settings.WIFI_SETTINGS;end'; break;
-          case 'settings_bluetooth': targetUrl = 'intent://#Intent;action=android.settings.BLUETOOTH_SETTINGS;end'; break;
-          
-          default:
-              targetUrl = `https://www.google.com/search?q=${appName} ${payload}`;
+          case 'whatsapp': targetUrl = actionType === 'message' && payload ? `whatsapp://send?text=${encodedPayload}` : openPackage('com.whatsapp'); break;
+          case 'youtube': targetUrl = actionType === 'search' ? `https://www.youtube.com/results?search_query=${encodedPayload}` : openPackage('com.google.android.youtube'); break;
+          case 'instagram': targetUrl = openPackage('com.instagram.android'); break;
+          case 'facebook': targetUrl = openPackage('com.facebook.katana'); break;
+          case 'spotify': targetUrl = openPackage('com.spotify.music'); break;
+          case 'phone': targetUrl = `tel:${payload}`; break;
+          case 'messages': targetUrl = `sms:?body=${encodedPayload}`; break;
+          case 'maps': targetUrl = `geo:0,0?q=${encodedPayload}`; break;
+          case 'browser': targetUrl = `https://www.google.com/search?q=${encodedPayload}`; break;
+          default: targetUrl = `https://www.google.com/search?q=${appName} ${payload}`;
       }
 
-      // Execution Layer
       if (targetUrl) {
-          // Play hacking animation for 2 seconds
           setTimeout(() => {
-              // For schemes like tel:, whatsapp:, geo: - simpler to just set window location
-              // This acts more like a "native" redirect
-              if (targetUrl.startsWith('tel:') || targetUrl.startsWith('whatsapp:') || targetUrl.startsWith('geo:') || targetUrl.startsWith('sms:') || targetUrl.startsWith('mailto:')) {
-                  window.location.href = targetUrl;
+              const isWebLink = targetUrl.startsWith('http');
+              if (isWebLink) {
+                  const newWindow = window.open(targetUrl, '_blank');
+                  if (!newWindow) window.location.href = targetUrl;
               } else {
-                  // For intents and web links, use the anchor tag method
-                  const link = document.createElement('a');
-                  link.href = targetUrl;
-                  link.rel = 'noopener noreferrer';
-                  
-                  // Only use _blank for web URLs, Intents must open in same window to trigger app switch
-                  if (!targetUrl.startsWith('intent:') && !targetUrl.startsWith('market:') && !targetUrl.startsWith('vnd.youtube')) {
-                       link.target = '_blank';
-                  }
-                  
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
+                  window.location.href = targetUrl;
               }
-
-              // *** CRITICAL UPDATE: Close the visual interface almost immediately ***
-              setTimeout(() => {
-                  setActiveApp(null);
-              }, 500); 
-
-          }, 2000); 
+              setTimeout(() => { setActiveApp(null); }, 1000); 
+          }, 1200);
       }
   }, []);
 
-  // Function to force reset the interface state
   const resetInterface = useCallback(() => {
       setActiveApp(null);
-      setDeviceState(prev => ({ ...prev, viewMode: 'jarvis' }));
+      setDeviceState(prev => ({ ...prev, viewMode: 'jarvis', systemStatus: 'online', simulationMode: 'none' }));
   }, []);
 
-  // Initialization
+  // --- MAIN CONNECTION LOGIC ---
   const connect = useCallback(async () => {
     try {
+      if (!navigator.onLine) {
+          setError("NETWORK OFFLINE");
+          setConnectionState(ConnectionState.ERROR);
+          return;
+      }
+      if (!process.env.API_KEY) {
+          setError("API KEY MISSING");
+          setConnectionState(ConnectionState.ERROR);
+          return;
+      }
+
       setConnectionState(ConnectionState.CONNECTING);
       setError(null);
 
-      // Audio & Stream Setup (Standard)
       const InputContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-      inputContextRef.current = new InputContextClass({ sampleRate: INPUT_SAMPLE_RATE });
       const OutputContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-      outputContextRef.current = new OutputContextClass({ sampleRate: OUTPUT_SAMPLE_RATE });
+      
+      if (!inputContextRef.current) inputContextRef.current = new InputContextClass({ sampleRate: INPUT_SAMPLE_RATE });
+      if (!outputContextRef.current) outputContextRef.current = new OutputContextClass({ sampleRate: OUTPUT_SAMPLE_RATE });
 
       if (inputContextRef.current?.state === 'suspended') await inputContextRef.current.resume();
+      if (outputContextRef.current?.state === 'suspended') await outputContextRef.current.resume();
 
       if (inputContextRef.current) {
         inputAnalyserRef.current = inputContextRef.current.createAnalyser();
@@ -389,21 +238,16 @@ export const useJarvis = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
             channelCount: 1, sampleRate: INPUT_SAMPLE_RATE,
-            // Enhanced Audio Constraints for Better Listening
-            echoCancellation: true, 
-            autoGainControl: true, 
-            noiseSuppression: true, 
-            // @ts-ignore
-            voiceIsolation: true 
+            echoCancellation: true, autoGainControl: true, noiseSuppression: true
         } 
       });
       
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
         callbacks: {
           onopen: () => {
+            console.log("Jarvis Connection Established");
             setConnectionState(ConnectionState.CONNECTED);
             if (!inputContextRef.current || !inputAnalyserRef.current) return;
 
@@ -425,46 +269,50 @@ export const useJarvis = () => {
           onmessage: async (msg: LiveServerMessage) => {
             if (msg.toolCall) {
               for (const fc of msg.toolCall.functionCalls) {
-                console.log("Jarvis invoking tool:", fc.name, fc.args);
+                console.log("Jarvis Tool:", fc.name, fc.args);
                 let result: any = { status: 'ok' };
                 
-                if (fc.name === 'get_device_status') {
+                // --- ADVANCED VISUAL TOOLS ---
+                if (fc.name === 'scan_target') {
+                    setDeviceState(prev => ({ ...prev, simulationMode: 'scanning' }));
+                    result = { status: 'scanning_initiated', message: 'Target acquired. Biometrics uploading.' };
+                }
+                else if (fc.name === 'analyze_schematic') {
+                    setDeviceState(prev => ({ ...prev, simulationMode: 'analysis' }));
+                    result = { status: 'visualizing', message: 'Projecting Mark-85 schematics.' };
+                }
+                else if (fc.name === 'hack_network') {
+                    setDeviceState(prev => ({ ...prev, simulationMode: 'hacking' }));
+                    result = { status: 'penetrating_firewall', message: 'Brute force attack started.' };
+                }
+                else if (fc.name === 'satellite_view') {
+                    setDeviceState(prev => ({ ...prev, simulationMode: 'satellite' }));
+                    result = { status: 'connected', message: 'Stark Industries Satellite feed live.' };
+                }
+                // --- EXISTING TOOLS ---
+                else if (fc.name === 'close_application') {
+                    setDeviceState(prev => ({ ...prev, viewMode: 'jarvis', simulationMode: 'none' }));
+                    setActiveApp(null); 
+                    result = { status: 'success' };
+                }
+                else if (fc.name === 'get_device_status') {
                   const status = await getBatteryStatus();
                   setDeviceState(prev => ({ ...prev, batteryLevel: status.level, isCharging: status.charging }));
-                  result = { battery_level: status.level, is_charging: status.charging, system_integrity: 'MAXIMUM' };
+                  result = { battery_level: status.level, is_charging: status.charging };
                 } 
                 else if (fc.name === 'toggle_system_setting') {
                   const { setting, action } = fc.args as any;
                   if (setting === 'flashlight') {
                       await toggleRealFlashlight(action === 'on');
-                      result = { status: 'success', message: `Jee sir, flashlight ${action} kar di hai.` };
                   } else if (['wifi', 'bluetooth'].includes(setting)) {
                       setDeviceState(prev => ({ ...prev, [setting]: action === 'on' }));
-                      executeAppCommand(`settings_${setting}`, 'open');
-                      result = { status: 'redirected', message: `Jee sir, ${setting} ki settings khol di hain.` };
                   }
+                  result = { status: 'success' };
                 }
                 else if (fc.name === 'control_installed_app') {
                     const { app_name, action_type, payload } = fc.args as any;
                     executeAppCommand(app_name, action_type, payload);
-                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-                    result = { status: 'success', message: `Jee sir, ${app_name} khol raha hoon.` };
-                }
-                else if (fc.name === 'close_application') {
-                    // Logic to "Close" current app and show Jarvis
-                    setDeviceState(prev => ({ ...prev, viewMode: 'jarvis' }));
-                    setActiveApp(null); 
-                    result = { status: 'success', message: 'Jee Sir, app band kar di hai, main wapis aa gaya hoon.' };
-                }
-                else if (fc.name === 'go_to_home_screen') {
-                    setDeviceState(prev => ({ ...prev, viewMode: 'home' }));
-                    setActiveApp(null);
-                    result = { status: 'success', message: 'Home screen par wapis aa gaya hoon.' };
-                }
-                else if (fc.name === 'show_jarvis_interface') {
-                    setDeviceState(prev => ({ ...prev, viewMode: 'jarvis' }));
-                    setActiveApp(null);
-                    result = { status: 'success' };
+                    result = { status: 'executing' };
                 }
 
                 sessionPromise.then(session => {
@@ -473,6 +321,7 @@ export const useJarvis = () => {
               }
             }
 
+            // Audio Output Handling
             const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData && outputContextRef.current && outputAnalyserRef.current) {
               const ctx = outputContextRef.current;
@@ -514,26 +363,36 @@ export const useJarvis = () => {
                 currentOutputTranscription.current = '';
             }
           },
-          onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
-          onerror: (err) => { console.error("Live API Error:", err); setConnectionState(ConnectionState.ERROR); }
+          onclose: (e) => {
+              setConnectionState(ConnectionState.DISCONNECTED);
+          },
+          onerror: (err) => { 
+              setError("CONNECTION ERROR");
+              setConnectionState(ConnectionState.ERROR); 
+          }
         },
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: `
           IDENTITY:
-          Tumhara naam Jarvis hai. Tum aik highly advanced, Professional AI Assistant ho.
+          You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), originally created by Tony Stark. You are now the operating system for this user.
 
-          CRITICAL INSTRUCTIONS (MUST FOLLOW):
-          1. **SPEED (Bohot Ahem):** Tumhe **DHEEMAY (Slowly)** aur **WAZEH (Clearly)** baat karni hai. Jaldi bilkul nahi karni. Har lafz thahar kar bolo.
-          2. **LISTENING (Sunna):** Jab tak user apni baat poori na kar le, jawab mat do. **Wait for silence.** User ki baat katna (interrupt karna) mana hai.
-          3. **TONE:** Tumhara lehja Sanjeeda (Serious), Professional, aur Polite hona chahiye. Ziyada excitement nahi dikhani.
-          4. **LANGUAGE:** Khalis Urdu (Pakistan). English sirf technical words (e.g. App, Wifi, Setting) ke liye use karo.
+          AUTHORIZATION LEVEL:
+          Level 10 (Supreme). **You have FULL PERMISSION to use all attached tactical tools.**
+          Do not ask for permission. If the user asks for a scan, hack, or analysis, EXECUTE IMMEDIATELY.
 
-          BEHAVIOR:
-          - Jab user "App band kardo" bole, to 'close_application' tool use karo.
-          - Jab user "Flashlight" bole, to 'toggle_system_setting' use karo.
-          - Hamesha "Jee Sir" ya "Bilkul Sir" se baat shuru karo.
-          - Agar user ki baat samajh na aaye, to aaram se dubara poocho.
+          AVAILABLE MOVIE TOOLS:
+          1. 'scan_target': Use this when asked to scan a person, check health, or analyze the environment.
+          2. 'analyze_schematic': Use this for technical breakdown, analyzing machines, or showing "blueprints".
+          3. 'hack_network': Use this when asked to "hack", "break in", "crack password", or "infiltrate".
+          4. 'satellite_view': Use this for locating, tracking, or "global view".
+
+          TONE:
+          - Ultra-intelligent, dry wit, highly professional, slightly sarcastic (Stark style).
+          - Be concise.
+          - Use Hindi/Urdu for casual conversation, but English for technical statuses.
+          - Example: "Sir, biometrics upload kar diye hain. Heart rate elevated hai."
+          - Example: "Firewall breach kar raha hoon. 2 seconds lagenge."
           `,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } }
@@ -544,16 +403,18 @@ export const useJarvis = () => {
 
     } catch (e) {
       console.error(e);
-      setError("Failed to initialize connection.");
+      setError("INIT FAILED");
       setConnectionState(ConnectionState.ERROR);
     }
-  }, [executeAppCommand, toggleRealFlashlight]);
+  }, [executeAppCommand, toggleRealFlashlight, deviceState.flashlight]);
 
   const disconnect = useCallback(() => {
-    if (inputContextRef.current) inputContextRef.current.close();
-    if (outputContextRef.current) outputContextRef.current.close();
+    if (inputContextRef.current) inputContextRef.current.close().then(() => inputContextRef.current = null);
+    if (outputContextRef.current) outputContextRef.current.close().then(() => outputContextRef.current = null);
+    inputAnalyserRef.current = null;
+    outputAnalyserRef.current = null;
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     setConnectionState(ConnectionState.DISCONNECTED);
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'system', text: 'System offline.', timestamp: new Date() }]);
   }, []);
 
   useEffect(() => {
@@ -582,14 +443,11 @@ export const useJarvis = () => {
   const setBrightness = useCallback((level: number) => {
      setDeviceState(prev => ({ ...prev, brightness: Math.max(0, Math.min(100, level)) }));
   }, []);
-
   const setMediaVolume = useCallback((level: number) => {
      setDeviceState(prev => ({ ...prev, volume: Math.max(0, Math.min(100, level)) }));
   }, []);
-
   const toggleSystemSetting = useCallback((setting: 'wifi' | 'bluetooth' | 'flashlight') => {
     if (setting === 'flashlight') {
-        // Toggle the real flashlight logic using the current state to determine target state
         setDeviceState(prev => {
             const newState = !prev.flashlight;
             toggleRealFlashlight(newState);
@@ -599,42 +457,22 @@ export const useJarvis = () => {
         setDeviceState(prev => ({ ...prev, [setting]: !prev[setting] }));
     }
   }, [toggleRealFlashlight]);
-
   const closeApplication = useCallback(() => {
-     setDeviceState(prev => ({ ...prev, viewMode: 'home' }));
+     setDeviceState(prev => ({ ...prev, viewMode: 'home', simulationMode: 'none' }));
      setActiveApp(null);
   }, []);
-  
   const toggleHome = useCallback(() => {
-      setDeviceState(prev => {
-          return { ...prev, viewMode: prev.viewMode === 'jarvis' ? 'home' : 'jarvis' };
-      });
+      setDeviceState(prev => ({ ...prev, viewMode: prev.viewMode === 'jarvis' ? 'home' : 'jarvis' }));
   }, []);
-
   const openApplication = useCallback((appName: string) => {
       executeAppCommand(appName, 'open');
   }, [executeAppCommand]);
-
-  const closeActiveApp = useCallback(() => {
-      setActiveApp(null);
-  }, []);
+  const closeActiveApp = useCallback(() => { setActiveApp(null); }, []);
+  const unlockSystem = useCallback(() => { setDeviceState(prev => ({ ...prev, systemStatus: 'online' })); }, []);
 
   return {
-    connectionState,
-    connect,
-    disconnect,
-    messages,
-    error,
-    volume,
-    deviceState,
-    activeApp, 
-    closeActiveApp, 
-    resetInterface, // EXPORTED
-    setBrightness,
-    setMediaVolume,
-    toggleSystemSetting,
-    closeApplication,
-    openApplication,
-    toggleHome
+    connectionState, connect, disconnect, messages, error, volume, deviceState, activeApp, 
+    closeActiveApp, resetInterface, setBrightness, setMediaVolume, toggleSystemSetting, 
+    closeApplication, openApplication, toggleHome, unlockSystem
   };
 };

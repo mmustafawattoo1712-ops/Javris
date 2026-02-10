@@ -27,4 +27,6 @@ export interface DeviceState {
   brightness: number;
   volume: number;
   viewMode: 'jarvis' | 'home';
+  systemStatus: 'online' | 'locked' | 'shutdown';
+  simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'satellite';
 }

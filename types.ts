@@ -28,5 +28,5 @@ export interface DeviceState {
   volume: number;
   viewMode: 'jarvis' | 'home';
   systemStatus: 'online' | 'locked' | 'shutdown';
-  simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'satellite';
+  simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'satellite' | 'suit' | 'sentry' | 'element' | 'flight' | 'database';
 }

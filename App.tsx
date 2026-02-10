@@ -226,7 +226,7 @@ const App: React.FC = () => {
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                              <div className="w-64 h-64 border border-cyan-500/20 rounded-full animate-ping opacity-20" />
                              <div className="absolute mt-40 text-center">
-                                 <p className="text-xs text-cyan-600 tracking-[0.3em] animate-pulse">LISTENING FOR "JARVIS"...</p>
+                                 <p className="text-xs text-cyan-600 tracking-[0.3em] animate-pulse">LISTENING (URDU)...</p>
                              </div>
                         </div>
                     )}

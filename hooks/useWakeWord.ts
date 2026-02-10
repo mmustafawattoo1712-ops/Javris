@@ -15,9 +15,7 @@ export const useWakeWord = (onWake: () => void) => {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    // We use a general setting. Often simpler to just use English for "Jarvis" as it's a proper noun, 
-    // but Urdu mode might be needed for the full sentence.
-    // Let's try flexible matching.
+    // Set language to Urdu (Pakistan)
     recognition.lang = 'ur-PK'; 
 
     recognition.onresult = (event: any) => {
@@ -29,13 +27,16 @@ export const useWakeWord = (onWake: () => void) => {
 
       // console.log("Wake Word Debug:", transcript);
 
-      // Check for keywords: Jarvis, System, Activate, Hello
+      // Check for keywords: Jarvis, System, Activate, Hello, Urdu phrases
       if (
           transcript.includes('jarvis') || 
-          transcript.includes('service') || // Phonetic match for Jarvis in some accents
+          transcript.includes('service') || 
           transcript.includes('activate') ||
           transcript.includes('on karo') ||
-          transcript.includes('start')
+          transcript.includes('start') ||
+          transcript.includes('shuru karo') ||
+          transcript.includes('suno') ||
+          transcript.includes('hello')
       ) {
         recognition.stop();
         onWake();

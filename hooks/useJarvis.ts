@@ -110,7 +110,7 @@ export const useJarvis = () => {
     volume: 50,
     viewMode: 'jarvis',
     systemStatus: 'online',
-    simulationMode: 'none' // New state for holograms
+    simulationMode: 'none'
   });
 
   const inputContextRef = useRef<AudioContext | null>(null);
@@ -122,7 +122,11 @@ export const useJarvis = () => {
   const flashlightTrackRef = useRef<MediaStreamTrack | null>(null);
   const currentInputTranscription = useRef<string>('');
   const currentOutputTranscription = useRef<string>('');
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // --- RECONNECTION LOGIC REFS ---
+  const isIntentionalDisconnect = useRef<boolean>(false);
+  const reconnectTimeoutRef = useRef<any>(null);
+  const connectRef = useRef<() => Promise<void>>(null); // Holds the latest connect function
 
   // --- HARDWARE FLASHLIGHT ---
   const toggleRealFlashlight = useCallback(async (turnOn: boolean) => {
@@ -203,11 +207,22 @@ export const useJarvis = () => {
   // --- MAIN CONNECTION LOGIC ---
   const connect = useCallback(async () => {
     try {
+      // Clear any pending reconnections
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      
+      // Reset intent flag
+      isIntentionalDisconnect.current = false;
+
       if (!navigator.onLine) {
           setError("NETWORK OFFLINE");
           setConnectionState(ConnectionState.ERROR);
+          // Retry logic for offline
+          reconnectTimeoutRef.current = setTimeout(() => {
+             if (connectRef.current) connectRef.current();
+          }, 3000);
           return;
       }
+      
       if (!process.env.API_KEY) {
           setError("API KEY MISSING");
           setConnectionState(ConnectionState.ERROR);
@@ -364,11 +379,28 @@ export const useJarvis = () => {
             }
           },
           onclose: (e) => {
-              setConnectionState(ConnectionState.DISCONNECTED);
+              if (isIntentionalDisconnect.current) {
+                  setConnectionState(ConnectionState.DISCONNECTED);
+              } else {
+                  console.warn("Connection dropped unexpectedly. Reconnecting...");
+                  setConnectionState(ConnectionState.CONNECTING);
+                  reconnectTimeoutRef.current = setTimeout(() => {
+                      if (connectRef.current) connectRef.current();
+                  }, 1000);
+              }
           },
           onerror: (err) => { 
-              setError("CONNECTION ERROR");
-              setConnectionState(ConnectionState.ERROR); 
+              console.error("Connection Error:", err);
+              if (isIntentionalDisconnect.current) {
+                  setError("CONNECTION ERROR");
+                  setConnectionState(ConnectionState.ERROR);
+              } else {
+                  console.warn("Error encountered. Attempting reconnect...");
+                  setConnectionState(ConnectionState.CONNECTING); // Stay visually connecting
+                  reconnectTimeoutRef.current = setTimeout(() => {
+                      if (connectRef.current) connectRef.current();
+                  }, 2000);
+              }
           }
         },
         config: {
@@ -403,17 +435,31 @@ export const useJarvis = () => {
 
     } catch (e) {
       console.error(e);
-      setError("INIT FAILED");
+      setError("INIT FAILED - RETRYING");
+      // Retry init failure
+      if (!isIntentionalDisconnect.current) {
+         reconnectTimeoutRef.current = setTimeout(() => {
+             if (connectRef.current) connectRef.current();
+         }, 3000);
+      }
       setConnectionState(ConnectionState.ERROR);
     }
   }, [executeAppCommand, toggleRealFlashlight, deviceState.flashlight]);
 
+  // Keep ref updated
+  useEffect(() => {
+      connectRef.current = connect;
+  }, [connect]);
+
   const disconnect = useCallback(() => {
+    isIntentionalDisconnect.current = true;
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    
     if (inputContextRef.current) inputContextRef.current.close().then(() => inputContextRef.current = null);
     if (outputContextRef.current) outputContextRef.current.close().then(() => outputContextRef.current = null);
     inputAnalyserRef.current = null;
     outputAnalyserRef.current = null;
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    
     setConnectionState(ConnectionState.DISCONNECTED);
   }, []);
 

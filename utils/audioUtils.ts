@@ -13,6 +13,9 @@ export function base64ToUint8Array(base64: string): Uint8Array {
 // This is used for sending microphone data to Gemini
 export function float32ToB64PCM(float32Array: Float32Array): string {
   const len = float32Array.length;
+  // Ensure we have data
+  if (len === 0) return '';
+  
   const int16Array = new Int16Array(len);
   for (let i = 0; i < len; i++) {
     // Clamp values to -1 to 1 and scale to Int16 range
@@ -47,4 +50,31 @@ export function pcmToAudioBuffer(
     }
   }
   return buffer;
+}
+
+// Robust linear interpolation downsampler
+export function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
+  if (inputRate === 16000) return input;
+  if (inputRate < 16000) return input; // Should not happen typically, but fail-safe
+
+  const ratio = inputRate / 16000;
+  const newLength = Math.floor(input.length / ratio);
+  
+  if (newLength <= 0) return new Float32Array(0);
+
+  const result = new Float32Array(newLength);
+  
+  for (let i = 0; i < newLength; i++) {
+    const index = i * ratio;
+    const low = Math.floor(index);
+    const high = Math.ceil(index);
+    const weight = index - low;
+    
+    // Safety check for out of bounds
+    const val1 = input[low] !== undefined ? input[low] : 0;
+    const val2 = input[high] !== undefined ? input[high] : val1; 
+    
+    result[i] = val1 * (1 - weight) + val2 * weight;
+  }
+  return result;
 }

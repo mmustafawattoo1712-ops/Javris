@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Terminal, ShieldCheck, Cpu, ExternalLink, Loader2 } from 'lucide-react';
+import { Target, Crosshair, Cpu, ChevronRight, Aperture } from 'lucide-react';
 
 interface ActiveAppWindowProps {
   appName: string;
@@ -7,91 +7,76 @@ interface ActiveAppWindowProps {
 }
 
 export const ActiveAppWindow: React.FC<ActiveAppWindowProps> = ({ appName, onClose }) => {
-  const [bootStep, setBootStep] = useState(0);
+  const [lockLevel, setLockLevel] = useState(0);
 
-  // Boot Sequence Logic
+  // Target Lock Sequence
   useEffect(() => {
-    // Reset state
-    setBootStep(0);
-
-    const steps = [
-        () => setBootStep(1), // "INITIALIZING PROTOCOL"
-        () => setBootStep(2), // "BYPASSING SECURITY"
-        () => setBootStep(3), // "INJECTING PAYLOAD"
-        () => setBootStep(4), // "ACCESS GRANTED - LAUNCHING"
+    setLockLevel(0);
+    const intervals = [
+        setTimeout(() => setLockLevel(1), 500),  // Acquiring
+        setTimeout(() => setLockLevel(2), 1000), // Locking
+        setTimeout(() => setLockLevel(3), 1500), // Locked
+        setTimeout(() => setLockLevel(4), 1800), // Firing (Launch)
     ];
-
-    let delay = 0;
-    steps.forEach((step) => {
-        delay += 400 + Math.random() * 300; // Random "hacking" delays
-        setTimeout(step, delay);
-    });
-
-    return () => {};
+    return () => intervals.forEach(clearTimeout);
   }, [appName]);
 
   return (
-    <div className="absolute inset-0 z-[150] flex items-center justify-center bg-black/90 backdrop-blur-xl perspective-1000 animate-in fade-in duration-300">
-        <div className="w-full max-w-md p-8 font-mono text-cyan-500 relative overflow-hidden border border-cyan-500/20 rounded-xl bg-black shadow-[0_0_50px_rgba(6,182,212,0.2)]">
-            {/* Scanline */}
-            <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.5)_50%)] bg-[size:100%_4px] pointer-events-none opacity-50" />
-            <div className="absolute top-0 left-0 w-full h-1 bg-cyan-400 opacity-50 animate-[scan_2s_linear_infinite]" />
-
-            <div className="flex items-center gap-3 mb-6 border-b border-cyan-500/30 pb-4">
-                {bootStep < 4 ? (
-                    <Terminal className="w-6 h-6 animate-pulse" />
-                ) : (
-                    <ExternalLink className="w-6 h-6 animate-bounce text-green-400" />
-                )}
-                <span className="text-lg font-bold tracking-widest">
-                    {bootStep < 4 ? "SYSTEM OVERRIDE" : "LAUNCHING EXTERNAL APP"}
-                </span>
-            </div>
-
-            <div className="space-y-3 text-xs md:text-sm mb-6">
-                <div className="flex justify-between items-center border-b border-gray-900 pb-1">
-                    <span className="text-gray-500">TARGET PACKAGE:</span>
-                    <span className="text-white uppercase font-bold">{appName}.apk</span>
-                </div>
-                
-                <div className={`flex justify-between transition-all duration-300 ${bootStep >= 1 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'}`}>
-                    <span>PROTOCOL:</span>
-                    <span className="text-yellow-400">INITIATED</span>
-                </div>
-                
-                <div className={`flex justify-between transition-all duration-300 ${bootStep >= 2 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'}`}>
-                    <span>SECURITY:</span>
-                    <span className="text-red-500 animate-pulse">BYPASSED</span>
-                </div>
-
-                <div className={`flex justify-between transition-all duration-300 ${bootStep >= 3 ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'}`}>
-                    <span>ROOT ACCESS:</span>
-                    <span className="text-green-500">GRANTED</span>
-                </div>
-
-                {bootStep >= 4 && (
-                     <div className="flex justify-between items-center mt-4 bg-green-900/20 p-2 rounded border border-green-500/30 animate-pulse">
-                        <span className="text-green-400 font-bold">REDIRECTING TO OS...</span>
-                        <Loader2 className="w-4 h-4 text-green-400 animate-spin" />
-                    </div>
-                )}
-            </div>
-
-            {/* Loading Bar */}
-            <div className="h-1 w-full bg-gray-900 rounded-full overflow-hidden relative">
-                <div 
-                    className={`h-full transition-all duration-500 ease-out ${bootStep >= 4 ? 'bg-green-500' : 'bg-cyan-500'}`}
-                    style={{ width: `${Math.min(100, (bootStep + 1) * 25)}%` }} 
-                />
-            </div>
+    <div className="absolute inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+        
+        {/* ROTATING RINGS BACKGROUND */}
+        <div className="absolute w-[120vw] h-[120vw] border border-cyan-500/10 rounded-full animate-[spin_10s_linear_infinite]" />
+        <div className="absolute w-[80vw] h-[80vw] border border-dashed border-cyan-500/10 rounded-full animate-[spin_15s_reverse_linear_infinite]" />
+        
+        {/* MAIN HUD CONTAINER */}
+        <div className="relative w-80 h-80 flex items-center justify-center">
             
-            <div className="mt-4 flex justify-between items-end">
-                <Cpu className="w-4 h-4 text-gray-700" />
-                <div className="text-[10px] text-gray-600 text-right">
-                    MK-85 PROCESSOR // {Math.floor(Math.random() * 9999)}<br/>
-                    <span className="text-cyan-900">INTENT.ACTION.MAIN</span>
+            {/* Outer Target Ring - Shrinks when locked */}
+            <div className={`absolute border-2 border-cyan-500/50 rounded-full transition-all duration-500 ease-out
+                ${lockLevel >= 3 ? 'w-48 h-48 border-red-500 shadow-[0_0_30px_red]' : 'w-72 h-72 border-cyan-500 animate-[spin_4s_linear_infinite]'}
+            `}>
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-1 bg-cyan-400" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-1 bg-cyan-400" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-cyan-400" />
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-cyan-400" />
+            </div>
+
+            {/* Inner Rotating Elements */}
+            <div className={`absolute w-56 h-56 border border-cyan-500/30 rounded-full transition-all duration-300 ${lockLevel >= 3 ? 'opacity-0' : 'animate-spin'}`} />
+            
+            {/* CENTRAL CONTENT */}
+            <div className="flex flex-col items-center justify-center z-10 text-center">
+                {lockLevel < 3 ? (
+                    <Crosshair className="w-16 h-16 text-cyan-400 animate-pulse" />
+                ) : (
+                    <Target className="w-16 h-16 text-red-500 animate-ping" />
+                )}
+                
+                <div className="mt-4 font-tech tracking-widest text-cyan-100 uppercase">
+                    {lockLevel === 0 && "ACQUIRING SIGNAL..."}
+                    {lockLevel === 1 && "BYPASSING SECURITY..."}
+                    {lockLevel === 2 && "CALIBRATING..."}
+                    {lockLevel === 3 && <span className="text-red-500 font-bold">TARGET LOCKED</span>}
+                    {lockLevel === 4 && <span className="text-green-400 font-bold">EXECUTING PROTOCOL</span>}
+                </div>
+                
+                <div className="mt-1 text-xs text-cyan-500 font-mono">
+                    TARGET: <span className="text-white font-bold">{appName.toUpperCase()}</span>
                 </div>
             </div>
+
+            {/* CORNER DATA BLOCKS */}
+            <div className="absolute top-10 right-0 text-[8px] text-cyan-600 font-mono text-right">
+                <div>DIST: 0.00m</div>
+                <div>WIND: 0.00m/s</div>
+                <div>ELEV: 0.00</div>
+            </div>
+            <div className="absolute bottom-10 left-0 text-[8px] text-cyan-600 font-mono text-left">
+                <div>PROT: TCP/IP</div>
+                <div>PORT: 8080</div>
+                <div>SEC: <span className="text-red-500">OFF</span></div>
+            </div>
+
         </div>
     </div>
   );

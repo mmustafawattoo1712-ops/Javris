@@ -9,6 +9,8 @@ import { HomeScreen } from './components/HomeScreen';
 import { HolographicHud } from './components/HolographicHud';
 import { ActiveAppWindow } from './components/ActiveAppWindow';
 import { HolographicDisplay } from './components/HolographicDisplay';
+import { MiniCameraWidget } from './components/MiniCameraWidget';
+import { VirtualMobile } from './components/VirtualMobile';
 import { ConnectionState } from './types';
 
 const App: React.FC = () => {
@@ -29,7 +31,13 @@ const App: React.FC = () => {
       closeApplication, 
       openApplication, 
       toggleHome,
-      unlockSystem
+      unlockSystem,
+      sendVideoFrame,
+      executeAppCommand,
+      toggleMobile,
+      isUserSpeaking,
+      incomingCall, // New
+      incomingMessage // New
   } = useJarvis();
 
   const [showLogs, setShowLogs] = useState(false);
@@ -68,26 +76,13 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-      if (isConnected) {
+      // CRITICAL FIX: Stop listening if connected OR connecting to free up the microphone
+      if (isConnected || isConnecting) {
           stopListening();
       } else if (hasInteracted && deviceState.systemStatus === 'online') {
           startListening();
       }
-  }, [isConnected, hasInteracted, startListening, stopListening, deviceState.systemStatus]);
-
-  // *** AUTO-RECOVERY LOGIC ***
-  // When user switches back to this tab (e.g. from WhatsApp), ensure UI is reset
-  useEffect(() => {
-      const handleVisibilityChange = () => {
-          if (document.visibilityState === 'visible') {
-              console.log("Jarvis Interface Resumed - Resetting State");
-              resetInterface();
-          }
-      };
-      
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [resetInterface]);
+  }, [isConnected, isConnecting, hasInteracted, startListening, stopListening, deviceState.systemStatus]);
 
   // --- SYSTEM SHUTDOWN VISUAL ---
   if (deviceState.systemStatus === 'shutdown') {
@@ -170,7 +165,7 @@ const App: React.FC = () => {
       {/* --- MAIN HUD INTERFACE --- */}
       {hasInteracted && (
           <>
-            {/* Background Effects */}
+            {/* Background Effects (Always visible for ambiance) */}
             <div className="fixed inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.1)_0%,transparent_70%)] pointer-events-none" />
             <div className="fixed inset-0 opacity-20 pointer-events-none bg-[linear-gradient(rgba(6,182,212,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.1)_1px,transparent_1px)] bg-[size:40px_40px]" />
             <div className="fixed inset-0 pointer-events-none scan-line opacity-10" />
@@ -179,32 +174,35 @@ const App: React.FC = () => {
             <div className="fixed inset-0 bg-black pointer-events-none z-[200] transition-opacity duration-500" style={{ opacity: 1 - (deviceState.brightness / 100) }} />
             <div className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-300 z-[100] mix-blend-overlay ${deviceState.flashlight ? 'opacity-90' : 'opacity-0'}`} />
 
-            {/* HOLOGRAPHIC HUD COMPONENT */}
-            <HolographicHud isConnected={isConnected} />
+            {/* --- CONDITIONAL UI RENDERING --- */}
+            {/* Only render JARVIS HUD elements if Mobile is NOT shown */}
+            {!deviceState.showMobile && (
+              <>
+                <HolographicHud isConnected={isConnected} />
+                <HolographicDisplay mode={deviceState.simulationMode} />
 
-            {/* ADVANCED HOLOGRAPHIC DISPLAY (SCAN/HACK/MAPS) */}
-            <HolographicDisplay mode={deviceState.simulationMode} />
-
-            {/* TOP HEADER HUD */}
-            <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start z-50 pointer-events-none">
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-cyan-400" />
-                        <span className="text-xs font-bold tracking-[0.2em] text-cyan-300 hud-text">MK-85 OS</span>
+                {/* TOP HEADER HUD */}
+                <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start z-50 pointer-events-none">
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-cyan-400" />
+                            <span className="text-xs font-bold tracking-[0.2em] text-cyan-300 hud-text">MK-85 OS</span>
+                        </div>
+                        <div className="text-[10px] text-cyan-600 tracking-widest pl-6">START SYSTEM</div>
                     </div>
-                    <div className="text-[10px] text-cyan-600 tracking-widest pl-6">START SYSTEM</div>
-                </div>
-                
-                <div className="flex flex-col items-end gap-1">
-                     <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold tracking-[0.2em] text-cyan-300 hud-text">
-                            {isConnected ? 'ONLINE' : isListening ? 'STANDBY' : 'OFFLINE'}
-                        </span>
-                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-400 shadow-[0_0_10px_cyan]' : isListening ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} />
-                     </div>
-                     <div className="text-[10px] text-cyan-600 tracking-widest">VOICE MODULE: {isListening ? 'ACTIVE' : 'PAUSED'}</div>
-                </div>
-            </header>
+                    
+                    <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold tracking-[0.2em] text-cyan-300 hud-text">
+                                {isConnected ? 'ONLINE' : isListening ? 'STANDBY' : 'OFFLINE'}
+                            </span>
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-400 shadow-[0_0_10px_cyan]' : isListening ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} />
+                        </div>
+                        <div className="text-[10px] text-cyan-600 tracking-widest">VOICE MODULE: {isListening ? 'ACTIVE' : 'PAUSED'}</div>
+                    </div>
+                </header>
+              </>
+            )}
 
             {/* MAIN CONTENT AREA */}
             <main className="relative z-10 flex flex-col items-center justify-center w-full h-full p-4">
@@ -217,99 +215,125 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* CENTRAL VISUALIZER */}
-                <div className={`relative mb-8 transform transition-all duration-700 ${deviceState.simulationMode !== 'none' ? 'scale-75 opacity-50 blur-sm' : 'scale-100'}`}>
-                    <ArcReactor volume={volume} isActive={isConnected} />
-                    
-                    {/* Standby Pulse when not connected */}
-                    {!isConnected && isListening && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                             <div className="w-64 h-64 border border-cyan-500/20 rounded-full animate-ping opacity-20" />
-                             <div className="absolute mt-40 text-center">
-                                 <p className="text-xs text-cyan-600 tracking-[0.3em] animate-pulse">LISTENING (URDU)...</p>
-                             </div>
+                {/* Only Show Arc Reactor & Standard Widgets if Mobile is hidden */}
+                {!deviceState.showMobile && (
+                  <>
+                    {/* CENTRAL VISUALIZER */}
+                    <div className={`relative mb-8 transform transition-all duration-700 ${deviceState.simulationMode !== 'none' ? 'scale-75 opacity-50 blur-sm' : 'scale-100'}`}>
+                        {/* Passed isUserSpeaking to Reactor */}
+                        <ArcReactor volume={volume} isActive={isConnected} isUserSpeaking={isUserSpeaking} />
+                        
+                        {/* Standby Pulse */}
+                        {!isConnected && isListening && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-64 h-64 border border-cyan-500/20 rounded-full animate-ping opacity-20" />
+                                <div className="absolute mt-40 text-center">
+                                    <p className="text-xs text-cyan-600 tracking-[0.3em] animate-pulse">LISTENING (URDU)...</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* MANUAL OVERRIDE BUTTON */}
+                    <div className="absolute bottom-24 flex gap-4 pointer-events-auto">
+                        {!isConnected && (
+                            <button
+                            onClick={connect}
+                            disabled={isConnecting}
+                            className="group relative px-6 py-2 border border-cyan-500/30 bg-cyan-900/10 hover:bg-cyan-500/20 rounded backdrop-blur-sm transition-all active:scale-95"
+                            >
+                            <span className="text-xs font-bold tracking-[0.2em] text-cyan-400 group-hover:text-cyan-200">
+                                {isConnecting ? 'INITIALIZING...' : 'MANUAL OVERRIDE'}
+                            </span>
+                            </button>
+                        )}
+                        
+                        {isConnected && (
+                            <button
+                            onClick={disconnect}
+                            className="group relative px-6 py-2 border border-red-500/30 bg-red-900/10 hover:bg-red-500/20 rounded backdrop-blur-sm transition-all active:scale-95"
+                            >
+                            <span className="text-xs font-bold tracking-[0.2em] text-red-400 group-hover:text-red-200">
+                                ABORT LINK
+                            </span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* ACTIVE APP / HACKING WINDOW */}
+                    {activeApp && (
+                        <ActiveAppWindow appName={activeApp} onClose={closeActiveApp} />
+                    )}
+
+                    {/* APP GRID MODE (Only if mobile hidden) */}
+                    {deviceState.viewMode === 'home' && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-lg animate-[scaleIn_0.3s_ease-out]">
+                            <HomeScreen onOpenApp={openApplication} />
+                            <button 
+                            onClick={toggleHome}
+                            className="absolute bottom-8 left-1/2 -translate-x-1/2 text-cyan-400 border border-cyan-500/50 px-4 py-2 rounded-full hover:bg-cyan-900/50"
+                            >
+                                CLOSE GRID
+                            </button>
                         </div>
                     )}
-                </div>
-
-                {/* MANUAL OVERRIDE BUTTON (Small, tactical) */}
-                <div className="absolute bottom-24 flex gap-4 pointer-events-auto">
-                    {!isConnected && (
-                        <button
-                          onClick={connect}
-                          disabled={isConnecting}
-                          className="group relative px-6 py-2 border border-cyan-500/30 bg-cyan-900/10 hover:bg-cyan-500/20 rounded backdrop-blur-sm transition-all active:scale-95"
-                        >
-                           <span className="text-xs font-bold tracking-[0.2em] text-cyan-400 group-hover:text-cyan-200">
-                               {isConnecting ? 'INITIALIZING...' : 'MANUAL OVERRIDE'}
-                           </span>
-                        </button>
-                    )}
-                    
-                    {isConnected && (
-                        <button
-                          onClick={disconnect}
-                          className="group relative px-6 py-2 border border-red-500/30 bg-red-900/10 hover:bg-red-500/20 rounded backdrop-blur-sm transition-all active:scale-95"
-                        >
-                           <span className="text-xs font-bold tracking-[0.2em] text-red-400 group-hover:text-red-200">
-                               ABORT LINK
-                           </span>
-                        </button>
-                    )}
-                </div>
-
-                {/* ACTIVE APP / HACKING WINDOW */}
-                {activeApp && (
-                     <ActiveAppWindow appName={activeApp} onClose={closeActiveApp} />
+                  </>
                 )}
 
-                {/* APP VIEW MODE */}
-                {deviceState.viewMode === 'home' && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-lg animate-[scaleIn_0.3s_ease-out]">
-                        <HomeScreen onOpenApp={openApplication} />
-                        <button 
-                           onClick={toggleHome}
-                           className="absolute bottom-8 left-1/2 -translate-x-1/2 text-cyan-400 border border-cyan-500/50 px-4 py-2 rounded-full hover:bg-cyan-900/50"
-                        >
-                            CLOSE GRID
-                        </button>
-                    </div>
-                )}
+                {/* VIRTUAL MOBILE INTERFACE (Exclusive when shown) */}
+                <VirtualMobile 
+                    isVisible={deviceState.showMobile} 
+                    onClose={toggleMobile}
+                    onOpenApp={executeAppCommand}
+                    batteryLevel={deviceState.batteryLevel}
+                    incomingCall={incomingCall} // New Prop
+                    incomingMessage={incomingMessage} // New Prop
+                />
 
             </main>
 
-            {/* RIGHT SIDE MONITOR */}
-            <SystemMonitor 
-                isConnected={isConnected} 
-                deviceState={deviceState} 
-                setBrightness={setBrightness} 
-                setMediaVolume={setMediaVolume}
-                toggleSystemSetting={toggleSystemSetting}
-            />
+            {/* SIDE MONITORS & LOGS - Only if mobile is hidden */}
+            {!deviceState.showMobile && (
+              <>
+                {/* RIGHT SIDE MONITOR */}
+                <SystemMonitor 
+                    isConnected={isConnected} 
+                    deviceState={deviceState} 
+                    setBrightness={setBrightness} 
+                    setMediaVolume={setMediaVolume}
+                    toggleSystemSetting={toggleSystemSetting}
+                />
 
-            {/* BOTTOM LOGS */}
-            {showLogs && <ChatLog messages={messages} />}
+                {/* LEFT SIDE MINI CAMERA WIDGET */}
+                <MiniCameraWidget 
+                    isConnected={isConnected} 
+                    sendVideoFrame={sendVideoFrame} 
+                />
 
-            {/* FOOTER CONTROLS */}
-            <footer className="absolute bottom-4 left-4 right-4 flex justify-between items-end z-40 pointer-events-none">
-                <div className="pointer-events-auto">
-                    <button 
-                        onClick={() => setShowLogs(!showLogs)}
-                        className={`p-2 rounded border transition-all ${showLogs ? 'border-cyan-400 text-cyan-400 bg-cyan-900/30' : 'border-cyan-900/50 text-cyan-700 hover:border-cyan-500/50'}`}
-                    >
-                        <Terminal className="w-4 h-4" />
-                    </button>
-                </div>
-                
-                <div className="flex flex-col items-end gap-1 text-[10px] text-cyan-800 font-mono tracking-widest">
-                    <div>SECURE CONNECTION: {isConnected ? 'ESTABLISHED' : 'WAITING'}</div>
-                    <div>LATENCY: {isConnected ? '12ms' : '--'}</div>
-                </div>
-            </footer>
+                {/* BOTTOM LOGS */}
+                {showLogs && <ChatLog messages={messages} />}
+
+                {/* FOOTER CONTROLS */}
+                <footer className="absolute bottom-4 left-4 right-4 flex justify-between items-end z-40 pointer-events-none">
+                    <div className="pointer-events-auto">
+                        <button 
+                            onClick={() => setShowLogs(!showLogs)}
+                            className={`p-2 rounded border transition-all ${showLogs ? 'border-cyan-400 text-cyan-400 bg-cyan-900/30' : 'border-cyan-900/50 text-cyan-700 hover:border-cyan-500/50'}`}
+                        >
+                            <Terminal className="w-4 h-4" />
+                        </button>
+                    </div>
+                    
+                    <div className="flex flex-col items-end gap-1 text-[10px] text-cyan-800 font-mono tracking-widest">
+                        <div>SECURE CONNECTION: {isConnected ? 'ESTABLISHED' : 'WAITING'}</div>
+                        <div>LATENCY: {isConnected ? '12ms' : '--'}</div>
+                    </div>
+                </footer>
+              </>
+            )}
           </>
       )}
     </div>
   );
 };
-
 export default App;

@@ -3,16 +3,26 @@ import React from 'react';
 interface ArcReactorProps {
   volume: number;
   isActive: boolean;
+  isUserSpeaking?: boolean; // New Prop
 }
 
-export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive }) => {
+export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUserSpeaking = false }) => {
   // Scale base size + volume reactivity
   const scale = 1 + volume * 0.5;
   const glowIntensity = isActive ? 0.5 + volume : 0.2;
-  const color = isActive ? '0, 225, 255' : '100, 116, 139'; // Cyan vs Gray
+  
+  // COLOR LOGIC: Red if speaking, Cyan if Active/Idle, Gray if Off
+  let color = '100, 116, 139'; // Default Gray
+  if (isActive) {
+      if (isUserSpeaking) {
+          color = '239, 68, 68'; // RED (User Speaking)
+      } else {
+          color = '0, 225, 255'; // CYAN (Jarvis Idle/Thinking/Speaking)
+      }
+  }
 
   return (
-    <div className="relative flex items-center justify-center w-64 h-64 md:w-96 md:h-96">
+    <div className="relative flex items-center justify-center w-64 h-64 md:w-96 md:h-96 transition-colors duration-300">
       {/* Outer Rotating Ring */}
       <div 
         className={`absolute inset-0 border-4 border-dashed rounded-full animate-[spin_10s_linear_infinite] opacity-30`}
@@ -54,8 +64,14 @@ export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive }) => {
       {/* Decorative HUD Lines */}
       {isActive && (
         <>
-            <div className="absolute top-1/2 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent -translate-y-1/2" />
-            <div className="absolute left-1/2 top-0 h-full w-[1px] bg-gradient-to-b from-transparent via-cyan-500/30 to-transparent -translate-x-1/2" />
+            <div 
+                className="absolute top-1/2 left-0 w-full h-[1px] -translate-y-1/2" 
+                style={{ background: `linear-gradient(90deg, transparent, rgba(${color}, 0.3), transparent)` }}
+            />
+            <div 
+                className="absolute left-1/2 top-0 h-full w-[1px] -translate-x-1/2" 
+                style={{ background: `linear-gradient(180deg, transparent, rgba(${color}, 0.3), transparent)` }}
+            />
         </>
       )}
     </div>

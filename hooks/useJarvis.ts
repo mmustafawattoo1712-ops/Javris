@@ -8,7 +8,7 @@ import { getBatteryStatus, getGeoLocation } from '../utils/deviceUtils';
 const MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-12-2025';
 const REQUIRED_API_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
-const SILENCE_THRESHOLD = 0.0001; 
+const RECONNECT_DELAY_MS = 2000; // 2 seconds between retries
 
 // --- PROFESSIONAL APP MAPPING (Deep Linking & Intents) ---
 const APP_SCHEMES: Record<string, { pkg: string; scheme: string; action?: string }> = {
@@ -58,6 +58,7 @@ const APP_SCHEMES: Record<string, { pkg: string; scheme: string; action?: string
     'twitter': { pkg: 'com.twitter.android', scheme: 'twitter://' },
     'linkedin': { pkg: 'com.linkedin.android', scheme: 'linkedin://' },
     'youtube': { pkg: 'com.google.android.youtube', scheme: 'vnd.youtube://' },
+    'google': { pkg: 'com.google.android.googlequicksearchbox', scheme: 'google://' },
 
     // --- PAKISTANI BANKING & FINANCE ---
     'easypaisa': { pkg: 'pk.com.telenor.phoenix', scheme: 'easypaisa://' },
@@ -110,10 +111,64 @@ const tools: FunctionDeclaration[] = [
         },
         payload: {
           type: Type.STRING,
-          description: 'Phone number, search query, or message body.'
+          description: 'Phone number, search query, or message body. Send "empty" if not needed.'
         }
       },
-      required: ['app_name', 'action_type']
+      required: ['app_name', 'action_type', 'payload']
+    }
+  },
+  {
+    name: 'toggle_setting',
+    description: 'Toggle hardware settings like Flashlight, WiFi, or Bluetooth.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { 
+            type: Type.STRING, 
+            enum: ['flashlight', 'wifi', 'bluetooth'],
+            description: 'The hardware component to toggle.' 
+        },
+        state: {
+            type: Type.STRING,
+            enum: ['on', 'off'],
+            description: 'The desired state.'
+        }
+      },
+      required: ['target', 'state']
+    }
+  },
+  {
+    name: 'adjust_level',
+    description: 'Adjust device levels like Volume or Brightness.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { 
+            type: Type.STRING, 
+            enum: ['volume', 'brightness'],
+            description: 'The target to adjust.' 
+        },
+        level: {
+            type: Type.NUMBER,
+            description: 'The percentage level (0-100).'
+        }
+      },
+      required: ['target', 'level']
+    }
+  },
+  {
+    name: 'media_controls',
+    description: 'MEDIA CONTROL: Play, Pause, Next, or Previous track for music/video.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        command: { 
+            type: Type.STRING, 
+            enum: ['play', 'pause', 'next', 'previous'],
+            description: 'Media command to execute.'
+        }
+      },
+      required: ['command']
     }
   },
   {
@@ -134,30 +189,9 @@ const tools: FunctionDeclaration[] = [
       type: Type.OBJECT,
       properties: {
         action: { type: Type.STRING, enum: ['read', 'reply'], description: 'Action to perform.' },
-        reply_text: { type: Type.STRING, description: 'The text content to send as a reply (required if action is reply).' }
+        reply_text: { type: Type.STRING, description: 'The text content to send as a reply. Send "none" if action is read.' }
       },
-      required: ['action']
-    }
-  },
-  {
-    name: 'trigger_simulation',
-    description: 'DEBUG TOOL: Use this to manually trigger a fake incoming call or message for testing.',
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            type: { type: Type.STRING, enum: ['call', 'message'] }
-        },
-        required: ['type']
-    }
-  },
-  {
-    name: 'read_notifications',
-    description: 'Reads the REAL System Notification Queue. Returns empty if no real notifications have been injected.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        filter: { type: Type.STRING, description: 'Optional: Filter by "whatsapp", "instagram", or "all".' }
-      }
+      required: ['action', 'reply_text']
     }
   },
   {
@@ -166,23 +200,9 @@ const tools: FunctionDeclaration[] = [
     parameters: {
         type: Type.OBJECT,
         properties: {
-            show: { type: Type.BOOLEAN, description: 'True to show mobile, False to hide.' }
+            show: { type: Type.STRING, enum: ["true", "false"], description: 'Set to "true" to show mobile, "false" to hide.' }
         },
         required: ['show']
-    }
-  },
-  {
-    name: 'set_android_alarm',
-    description: 'Sets a REAL alarm or timer on the Android system clock.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        hour: { type: Type.NUMBER, description: 'Hour (0-23)' },
-        minutes: { type: Type.NUMBER, description: 'Minutes (0-59)' },
-        message: { type: Type.STRING, description: 'Label for the alarm' },
-        skip_ui: { type: Type.BOOLEAN, description: 'If true, sets alarm without UI confirmation (if supported)' }
-      },
-      required: ['hour', 'minutes']
     }
   },
   {
@@ -192,17 +212,6 @@ const tools: FunctionDeclaration[] = [
         type: Type.OBJECT,
         properties: { query: { type: Type.STRING } },
         required: ['query']
-    }
-  },
-  {
-    name: 'get_device_status',
-    description: 'Get battery, charging status, and location.',
-    parameters: { 
-        type: Type.OBJECT, 
-        properties: {
-            _dummy: { type: Type.STRING, description: 'Ignore this.' }
-        },
-        required: ['_dummy'] // Fix for potential API strictness
     }
   }
 ];
@@ -222,6 +231,10 @@ export const useJarvis = () => {
   // Ref to hold the queue of REAL notifications injected via the bridge
   const realNotificationsRef = useRef<NotificationItem[]>([]);
 
+  // Transcription Buffers
+  const currentInputTranscription = useRef<string>('');
+  const currentOutputTranscription = useRef<string>('');
+
   const [deviceState, setDeviceState] = useState<DeviceState>({
     batteryLevel: null,
     isCharging: false,
@@ -237,201 +250,108 @@ export const useJarvis = () => {
     simulationMode: 'none'
   });
 
+  // AUDIO REFS - Persist across re-connects
   const inputContextRef = useRef<AudioContext | null>(null);
   const outputContextRef = useRef<AudioContext | null>(null);
-  const outputGainRef = useRef<GainNode | null>(null); // Controls Volume
+  const outputGainRef = useRef<GainNode | null>(null);
   const inputAnalyserRef = useRef<AnalyserNode | null>(null);
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const flashlightTrackRef = useRef<MediaStreamTrack | null>(null);
   
-  // SESSION REF: Holds the active LiveSession object for synchronous access
+  // SESSION REF
   const sessionRef = useRef<any>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isIntentionalDisconnect = useRef<boolean>(false);
-  const connectRef = useRef<() => Promise<void>>(null);
+  const isPermanentConnectionRef = useRef<boolean>(false); // THE DAEMON FLAG
+  const isConnectingRef = useRef<boolean>(false); // THE RACE CONDITION GUARD
   const isSocketOpenRef = useRef<boolean>(false); 
   
-  // Track tool processing but DO NOT BLOCK audio
   const isProcessingToolRef = useRef<boolean>(false);
 
-  // --- NATIVE BRIDGE INJECTION (THE REAL FIX) ---
-  // This allows the user's external system to push REAL data into Jarvis
+  // --- NATIVE BRIDGE INJECTION ---
   useEffect(() => {
     // @ts-ignore
     window.JarvisBridge = {
-        // Call this from Native Android: window.JarvisBridge.injectCall("John", "03001234567")
         injectCall: (name: string, number: string) => {
             console.log("[BRIDGE] Real Call Injected:", name);
-            const call: IncomingCall = {
-                id: Date.now().toString(),
-                name,
-                number,
-                status: 'ringing'
-            };
+            const call: IncomingCall = { id: Date.now().toString(), name, number, status: 'ringing' };
             setIncomingCall(call);
             setDeviceState(prev => ({ ...prev, showMobile: true }));
-            
-            // Notify Model
             if (sessionRef.current && isSocketOpenRef.current) {
-                 sessionRef.current.sendRealtimeInput([{ 
-                     text: `SYSTEM_EVENT: REAL Incoming Call from ${name} (${number}). Announce it immediately.` 
-                 }]);
+                 sessionRef.current.sendRealtimeInput([{ text: `SYSTEM_EVENT: REAL Incoming Call from ${name} (${number}).` }]);
             }
         },
-        // Call this from Native Android: window.JarvisBridge.injectMessage("Mom", "Come home", "whatsapp")
         injectMessage: (sender: string, content: string, app: string = 'sms') => {
              console.log("[BRIDGE] Real Message Injected:", sender);
-             const msg: IncomingMessage = {
-                 id: Date.now().toString(),
-                 sender,
-                 content,
-                 app,
-                 timestamp: new Date()
-             };
+             const msg: IncomingMessage = { id: Date.now().toString(), sender, content, app, timestamp: new Date() };
              setIncomingMessage(msg);
-             
-             // Add to notification queue for history
-             realNotificationsRef.current.push({
-                 id: Date.now().toString(),
-                 app,
-                 title: sender,
-                 text: content,
-                 timestamp: Date.now()
-             });
-
-             // Notify Model
+             realNotificationsRef.current.push({ id: Date.now().toString(), app, title: sender, text: content, timestamp: Date.now() });
              if (sessionRef.current && isSocketOpenRef.current) {
-                 sessionRef.current.sendRealtimeInput([{ 
-                     text: `SYSTEM_EVENT: REAL New Message from ${sender} on ${app}: "${content}". Announce it.` 
-                 }]);
+                 sessionRef.current.sendRealtimeInput([{ text: `SYSTEM_EVENT: REAL New Message from ${sender} on ${app}: "${content}".` }]);
              }
         },
-        // Update Battery from Native
         updateBattery: (level: number, charging: boolean) => {
             setDeviceState(prev => ({ ...prev, batteryLevel: level, isCharging: charging }));
         },
-        // Generic Notification Injection
         injectNotification: (app: string, title: string, text: string) => {
-             realNotificationsRef.current.push({
-                 id: Date.now().toString(),
-                 app,
-                 title,
-                 text,
-                 timestamp: Date.now()
-             });
+             realNotificationsRef.current.push({ id: Date.now().toString(), app, title, text, timestamp: Date.now() });
         }
     };
   }, []);
 
-  // --- TRIGGER SIMULATION (Injects Context to Gemini) ---
-  const triggerSimulatedEvent = useCallback(async (type: 'call' | 'message') => {
-      if (!sessionRef.current) return;
-
-      if (type === 'call') {
-          const fakeCall: IncomingCall = {
-              id: 'call_123',
-              name: 'Nick Fury',
-              number: '+1-555-0199',
-              status: 'ringing'
-          };
-          setIncomingCall(fakeCall);
-          setDeviceState(prev => ({ ...prev, showMobile: true })); // Force show phone
-
-          // Inject Context to Model
-          await sessionRef.current.sendRealtimeInput([{ 
-              text: `SYSTEM_EVENT: Incoming Call Detected from ${fakeCall.name} (${fakeCall.number}). Announce it immediately: "Sir, [Name] is calling. Should I attend or reject?"` 
-          }]);
-      } 
-      else if (type === 'message') {
-          const fakeMsg: IncomingMessage = {
-              id: 'msg_123',
-              sender: 'Pepper Potts',
-              content: 'Tony, dinner is at 8. Do not be late!',
-              app: 'whatsapp',
-              timestamp: new Date()
-          };
-          setIncomingMessage(fakeMsg);
-          setDeviceState(prev => ({ ...prev, showMobile: true }));
-
-          // Inject Context to Model
-          await sessionRef.current.sendRealtimeInput([{ 
-              text: `SYSTEM_EVENT: Incoming WhatsApp Message from ${fakeMsg.sender}: "${fakeMsg.content}". Announce it: "Sir, message from [Name]. Should I read or reply?"` 
-          }]);
-      }
-  }, []);
-
-  // --- FLASHLIGHT CONTROL (REAL & ROBUST) ---
   const toggleRealFlashlight = useCallback(async (turnOn: boolean) => {
       try {
           if (turnOn) {
-              if (flashlightTrackRef.current) {
-                  // Already On: Update state just in case
-                  setDeviceState(prev => ({ ...prev, flashlight: true }));
-                  return;
-              }
-
+              if (flashlightTrackRef.current) return;
+              let stream: MediaStream;
               try {
-                  // Attempt to access rear camera
-                  const stream = await navigator.mediaDevices.getUserMedia({ 
-                      video: { facingMode: 'environment' } 
-                  });
-                  
-                  const track = stream.getVideoTracks()[0];
-                  
-                  // Check if torch is supported by hardware
-                  // @ts-ignore
-                  const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-
-                  // @ts-ignore
-                  if (capabilities.torch) {
-                      flashlightTrackRef.current = track;
+                  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+              } catch (envErr) {
+                  try {
+                      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                  } catch (fatalErr) {
+                      throw new Error("Camera unavailable");
+                  }
+              }
+              const track = stream.getVideoTracks()[0];
+              flashlightTrackRef.current = track;
+              setTimeout(async () => {
+                  if (!flashlightTrackRef.current) { track.stop(); return; }
+                  try {
                       // @ts-ignore
                       await track.applyConstraints({ advanced: [{ torch: true }] });
-                  } else {
-                      console.warn("Hardware torch not supported on this device. Using screen light.");
-                      track.stop(); // Stop track to save resources
-                  }
-              } catch (cameraErr) {
-                  // Camera busy or permission denied
-                  console.warn("Camera access for flashlight failed (busy/denied). Falling back to screen light.", cameraErr);
-              }
-              
-              // ALWAYS set state to true so the UI "Screen Flashlight" works as fallback
+                  } catch (e) { setDeviceState(prev => ({ ...prev, brightness: 100 })); }
+              }, 500);
               setDeviceState(prev => ({ ...prev, flashlight: true }));
-
           } else {
-              // Turn Off
               if (flashlightTrackRef.current) {
-                  try {
-                    // @ts-ignore
-                    await flashlightTrackRef.current.applyConstraints({ advanced: [{ torch: false }] });
-                  } catch(e) {
-                      // ignore constraint errors on stop
-                  }
-                  flashlightTrackRef.current.stop();
+                  const track = flashlightTrackRef.current;
                   flashlightTrackRef.current = null;
+                  // @ts-ignore
+                  try { await track.applyConstraints({ advanced: [{ torch: false }] }); } catch(e) {}
+                  track.stop();
               }
               setDeviceState(prev => ({ ...prev, flashlight: false }));
           }
       } catch (err) {
-          console.error("Flashlight Toggle System Error:", err);
+          if (turnOn) setDeviceState(prev => ({ ...prev, brightness: 100, flashlight: true }));
       }
   }, []);
 
-  // --- SAFE APP LAUNCHER (ANTI-CRASH) ---
   const executeAppCommand = useCallback((appName: string, actionType: string, payload: string = '') => {
       console.log(`[JARVIS] Launching App: ${appName} | Action: ${actionType}`);
       const encodedPayload = encodeURIComponent(payload);
       let targetUrl = '';
       
       if (actionType === 'close') {
-          targetUrl = 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.HOME;end';
           setActiveApp(null); 
-          setDeviceState(prev => ({ ...prev, showMobile: false }));
+          setDeviceState(prev => ({ ...prev, showMobile: false, viewMode: 'jarvis', simulationMode: 'none' }));
+          targetUrl = 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.HOME;end';
       }
       else if (payload.startsWith('intent:') || payload.startsWith('geo:') || payload.startsWith('tel:')) {
           targetUrl = payload;
@@ -441,49 +361,23 @@ export const useJarvis = () => {
           const key = appName.toLowerCase().replace(/\s/g, '');
           const appData = APP_SCHEMES[key];
           
-          const buildIntent = (pkg: string, scheme: string, action: string = '', data: string = '') => {
-              if (scheme.startsWith('android.settings')) {
-                   return `intent:#Intent;action=${scheme};end`;
-              }
-              let intent = `intent://${data}#Intent;scheme=${scheme.replace('://', '')};package=${pkg};`;
-              if (action) intent += `action=${action};`;
-              intent += `S.browser_fallback_url=https://play.google.com/store/apps/details?id=${pkg};end`;
-              return intent;
-          };
-
           if (appData) {
-              if (key === 'whatsapp' && actionType === 'message') {
-                  targetUrl = `intent://send?text=${encodedPayload}#Intent;scheme=whatsapp;package=com.whatsapp;action=android.intent.action.SEND;type=text/plain;end`;
-              } 
-              else if (key === 'youtube' && actionType === 'search') {
-                   targetUrl = `intent://results?search_query=${encodedPayload}#Intent;scheme=vnd.youtube;package=com.google.android.youtube;end`; 
-              }
-              else if (key === 'maps') {
-                   targetUrl = `geo:0,0?q=${encodedPayload}`;
-              }
-              else if (key === 'phone' || key === 'call') {
-                   targetUrl = `tel:${payload.replace(/\s/g, '')}`;
-              }
-              else if (key === 'sms') {
-                   targetUrl = `sms:${payload}?body=${encodedPayload}`;
-              }
-              else if (key === 'camera') {
-                   targetUrl = `intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end`;
-              }
+              if (key === 'whatsapp' && actionType === 'message') targetUrl = `intent://send?text=${encodedPayload}#Intent;scheme=whatsapp;package=com.whatsapp;action=android.intent.action.SEND;type=text/plain;end`;
+              else if (key === 'youtube' && actionType === 'search') targetUrl = `intent://results?search_query=${encodedPayload}#Intent;scheme=vnd.youtube;package=com.google.android.youtube;end`; 
+              else if (key === 'maps') targetUrl = `geo:0,0?q=${encodedPayload}`;
+              else if (key === 'phone' || key === 'call') targetUrl = `tel:${payload.replace(/\s/g, '')}`;
+              else if (key === 'sms') targetUrl = `sms:${payload}?body=${encodedPayload}`;
+              else if (key === 'camera') targetUrl = `intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end`;
+              else if ((key === 'google' || key === 'chrome') && actionType === 'search') targetUrl = `https://www.google.com/search?q=${encodedPayload}`;
               else {
-                  targetUrl = buildIntent(appData.pkg, appData.scheme);
+                  if (appData.scheme.startsWith('android.settings')) targetUrl = `intent:#Intent;action=${appData.scheme};end`;
+                  else targetUrl = `intent://${payload}#Intent;scheme=${appData.scheme.replace('://', '')};package=${appData.pkg};end`;
               }
           } else {
-              // Fallback
-              if (actionType === 'open') {
-                   targetUrl = `https://play.google.com/store/search?q=${encodedPayload}&c=apps`;
-              } else {
-                  targetUrl = `https://www.google.com/search?q=${appName} ${payload}`;
-              }
+              if (actionType === 'open') targetUrl = `https://play.google.com/store/search?q=${encodedPayload}&c=apps`;
+              else targetUrl = `https://www.google.com/search?q=${appName} ${payload}`;
           }
       }
-
-      console.log(`[JARVIS] Target Intent: ${targetUrl}`);
 
       if (targetUrl) {
           setTimeout(() => {
@@ -495,136 +389,115 @@ export const useJarvis = () => {
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
-              } catch(e) {
-                  console.error("Launch Error:", e);
-              }
-              setTimeout(() => { setActiveApp(null); }, 3000); 
+              } catch(e) {}
+              if (actionType !== 'close') setTimeout(() => { setActiveApp(null); }, 3000); 
           }, 300);
       }
   }, []);
 
-  const resetInterface = useCallback(() => {
-      setActiveApp(null);
-      setDeviceState(prev => ({ ...prev, viewMode: 'jarvis', systemStatus: 'online', simulationMode: 'none' }));
-  }, []);
-
   const sendVideoFrame = useCallback((base64Image: string) => {
-      // PRO: Strict check to avoid "Internal Error" when session is not ready or tool is running
       if (isSocketOpenRef.current && sessionRef.current && !isProcessingToolRef.current) {
           try {
-              sessionRef.current.sendRealtimeInput({
-                  media: {
-                      mimeType: 'image/jpeg',
-                      data: base64Image
-                  }
-              });
-          } catch (e) {
-             // Silently fail if frame drops
-          }
+              sessionRef.current.sendRealtimeInput({ media: { mimeType: 'image/jpeg', data: base64Image } });
+          } catch (e) { }
       }
   }, []);
 
-  // Cleanup Function
-  const disconnect = useCallback(() => {
-    isIntentionalDisconnect.current = true;
+  const disconnect = useCallback(async () => {
+    // ABORT COMMAND - User manually killed connection
+    isPermanentConnectionRef.current = false;
     isSocketOpenRef.current = false;
-    isProcessingToolRef.current = false;
-    sessionRef.current = null;
     
+    // Clear retries
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     
-    // Cleanup Audio Inputs
-    if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-    }
+    // FULL AUDIO TEARDOWN
+    if (scriptProcessorRef.current) { try { scriptProcessorRef.current.disconnect(); } catch(e){} scriptProcessorRef.current = null; }
+    if (mediaStreamRef.current) { mediaStreamRef.current.getTracks().forEach(track => track.stop()); mediaStreamRef.current = null; }
+    if (inputContextRef.current) { try { await inputContextRef.current.close(); } catch(e) {} inputContextRef.current = null; }
+    if (outputContextRef.current) { try { await outputContextRef.current.close(); } catch(e) {} outputContextRef.current = null; }
     
-    if (inputContextRef.current) {
-        inputContextRef.current.close().catch(() => {});
-        inputContextRef.current = null;
-    }
+    sessionRef.current = null;
+    isConnectingRef.current = false;
     
-    if (outputContextRef.current) {
-        outputContextRef.current.close().catch(() => {});
-        outputContextRef.current = null;
-    }
-    
-    inputAnalyserRef.current = null;
-    outputAnalyserRef.current = null;
-    outputGainRef.current = null;
     setConnectionState(ConnectionState.DISCONNECTED);
     setIsUserSpeaking(false);
-    setIncomingCall(null);
-    setIncomingMessage(null);
   }, []);
 
   const connect = useCallback(async () => {
     try {
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-      
-      // DEBOUNCE: If we are already connected or connecting, abort
-      if (isSocketOpenRef.current || connectionState === ConnectionState.CONNECTING) {
-          return;
-      }
+      // 1. DAEMON MODE: Activate
+      isPermanentConnectionRef.current = true;
 
-      isIntentionalDisconnect.current = false;
-      isProcessingToolRef.current = false;
-      
-      if (!navigator.onLine) {
-          setError("OFFLINE MODE");
-          setConnectionState(ConnectionState.ERROR);
+      // 2. RACE CONDITION CHECK: Prevent loop
+      if (isConnectingRef.current || isSocketOpenRef.current) {
           return;
       }
+      isConnectingRef.current = true;
+
       if (!process.env.API_KEY) {
           setError("API KEY MISSING");
           setConnectionState(ConnectionState.ERROR);
+          isPermanentConnectionRef.current = false;
+          isConnectingRef.current = false;
           return;
       }
 
-      setConnectionState(ConnectionState.CONNECTING);
+      // 3. SILENT RETRY: Only show "Connecting" if disconnected
+      setConnectionState(prev => prev === ConnectionState.CONNECTED ? ConnectionState.CONNECTED : ConnectionState.CONNECTING);
       setError(null);
 
-      // --- AUDIO SETUP ---
+      // --- AUDIO INIT (REUSE STRATEGY) ---
+      // We do NOT close the AudioContext on disconnect/reconnect automatically to avoid Autoplay blocks
       const InputContextClass = (window.AudioContext || (window as any).webkitAudioContext);
       const OutputContextClass = (window.AudioContext || (window as any).webkitAudioContext);
       
-      // Create new contexts to avoid "stale" states
-      inputContextRef.current = new InputContextClass();
-      outputContextRef.current = new OutputContextClass({ sampleRate: OUTPUT_SAMPLE_RATE });
+      if (!inputContextRef.current || inputContextRef.current.state === 'closed') {
+          inputContextRef.current = new InputContextClass();
+      }
+      if (!outputContextRef.current || outputContextRef.current.state === 'closed') {
+          outputContextRef.current = new OutputContextClass({ sampleRate: OUTPUT_SAMPLE_RATE });
+      }
 
-      // Resume Contexts (Browser Security Policy)
-      await inputContextRef.current.resume();
-      await outputContextRef.current.resume();
-
-      // Audio Graph Setup (Output)
-      outputGainRef.current = outputContextRef.current.createGain();
-      outputGainRef.current.gain.value = 1.0; // Max Volume by default
-      outputAnalyserRef.current = outputContextRef.current.createAnalyser();
-      outputAnalyserRef.current.fftSize = 256;
-      
-      // Chain: Analyser -> Gain -> Destination
-      outputAnalyserRef.current.connect(outputGainRef.current);
-      outputGainRef.current.connect(outputContextRef.current.destination);
-
-      // Audio Graph Setup (Input)
-      inputAnalyserRef.current = inputContextRef.current.createAnalyser();
-      inputAnalyserRef.current.fftSize = 256;
-
-      // Microphone Access
-      let stream: MediaStream | null = null;
+      // Resume Contexts (Required after user gesture)
       try {
-          stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                channelCount: 1, 
-                echoCancellation: true, 
-                autoGainControl: true, 
-                noiseSuppression: true
-            } 
-          });
-          mediaStreamRef.current = stream;
-      } catch (err) {
-         console.error("Microphone Access Failed", err);
-         throw new Error("Microphone Access Denied");
+        if (inputContextRef.current.state === 'suspended') await inputContextRef.current.resume();
+        if (outputContextRef.current.state === 'suspended') await outputContextRef.current.resume();
+      } catch (e) {}
+
+      // Output Graph Setup (Idempotent)
+      if (!outputGainRef.current) {
+          outputGainRef.current = outputContextRef.current.createGain();
+          outputGainRef.current.gain.value = 1.0; 
+          outputAnalyserRef.current = outputContextRef.current.createAnalyser();
+          outputAnalyserRef.current.fftSize = 256;
+          outputAnalyserRef.current.connect(outputGainRef.current);
+          outputGainRef.current.connect(outputContextRef.current.destination);
+      }
+
+      // Input Graph Setup (WITH BOOSTER)
+      if (!inputAnalyserRef.current) {
+          inputAnalyserRef.current = inputContextRef.current.createAnalyser();
+          inputAnalyserRef.current.fftSize = 256;
+      }
+
+      // Microphone Stream (Reuse if possible)
+      let stream = mediaStreamRef.current;
+      if (!stream || !stream.active) {
+          try {
+              stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: { channelCount: 1, echoCancellation: true, autoGainControl: true, noiseSuppression: true } 
+              });
+              mediaStreamRef.current = stream;
+          } catch (err) {
+             console.error("Mic Error", err);
+             // Fail silently and retry later
+             isConnectingRef.current = false;
+             if (isPermanentConnectionRef.current) {
+                 retryTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+             }
+             return;
+          }
       }
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -632,201 +505,119 @@ export const useJarvis = () => {
         model: MODEL_NAME,
         callbacks: {
           onopen: () => {
-            console.log("Jarvis Connection Established");
+            console.log("Jarvis Connected");
             setConnectionState(ConnectionState.CONNECTED);
             isSocketOpenRef.current = true;
+            isConnectingRef.current = false; // Release lock
             
-            sessionPromise.then(session => {
-                sessionRef.current = session;
-            });
+            sessionPromise.then(session => { sessionRef.current = session; });
 
-            // --- AUDIO PIPELINE ---
             if (!inputContextRef.current || !inputAnalyserRef.current || !stream) return;
+
+            // Re-create processor to ensure clean state
+            if (scriptProcessorRef.current) {
+                scriptProcessorRef.current.disconnect();
+            }
 
             const actualRate = inputContextRef.current.sampleRate;
             const source = inputContextRef.current.createMediaStreamSource(stream);
             
-            const processor = inputContextRef.current.createScriptProcessor(2048, 1, 1);
+            // --- HEARING AID (AMPLIFIER) ---
+            const inputGain = inputContextRef.current.createGain();
+            inputGain.gain.value = 3.0; // 300% Volume Boost for clear hearing
+
+            const processor = inputContextRef.current.createScriptProcessor(4096, 1, 1);
+            scriptProcessorRef.current = processor;
             
             processor.onaudioprocess = (e) => {
-              // FIX: Removed 'isProcessingToolRef.current' check.
-              // Now Jarvis listens to you even if he is doing a task (Full Duplex).
               if (!isSocketOpenRef.current || !sessionRef.current) return;
-
               try {
                   const inputData = e.inputBuffer.getChannelData(0);
-                  
-                  // PRO: Strict Silence Detection
-                  let sum = 0;
-                  for(let i = 0; i < inputData.length; i++) sum += Math.abs(inputData[i]);
-                  const avg = sum / inputData.length;
-                  
-                  if (avg < SILENCE_THRESHOLD) return; 
-
                   const downsampledData = downsampleTo16k(inputData, actualRate);
                   const b64Data = float32ToB64PCM(downsampledData);
                   
-                  if (!b64Data) return;
-
-                  sessionRef.current.sendRealtimeInput({ 
-                      media: { 
-                          mimeType: `audio/pcm;rate=${REQUIRED_API_SAMPLE_RATE}`, 
-                          data: b64Data 
-                      } 
-                  });
-              } catch (processError) {
-                  // Ignore audio processing errors to keep the app alive
-              }
+                  // ALWAYS SEND, even if quiet, to keep connection alive
+                  if (b64Data) {
+                      sessionRef.current.sendRealtimeInput({ 
+                          media: { mimeType: `audio/pcm;rate=${REQUIRED_API_SAMPLE_RATE}`, data: b64Data } 
+                      }).catch(() => {}); 
+                  }
+              } catch (err) { }
             };
 
-            source.connect(inputAnalyserRef.current);
+            // CONNECT GRAPH: Source -> Amp -> Analyser -> Processor -> Dest
+            source.connect(inputGain);
+            inputGain.connect(inputAnalyserRef.current);
             inputAnalyserRef.current.connect(processor);
             processor.connect(inputContextRef.current.destination);
           },
           onmessage: async (msg: LiveServerMessage) => {
-            if (msg.toolCall) {
-              // Flag tool processing but DO NOT STOP AUDIO
-              isProcessingToolRef.current = true;
-              
-              for (const fc of msg.toolCall.functionCalls) {
-                console.log("Jarvis Tool Triggered:", fc.name, fc.args);
-                let result: any = { status: 'ok' };
-                
-                try {
-                    // --- TOOL EXECUTION ---
-                    if (fc.name === 'get_device_status') {
-                        const status = await getBatteryStatus();
-                        setDeviceState(prev => ({ ...prev, batteryLevel: status.level, isCharging: status.charging }));
-                        result = { battery_level: status.level, is_charging: status.charging };
-                    } 
-                    else if (fc.name === 'trigger_simulation') {
-                        const { type } = fc.args as any;
-                        triggerSimulatedEvent(type);
-                        result = { status: 'success', message: `Simulating ${type}` };
-                    }
-                    else if (fc.name === 'handle_incoming_call') {
-                        const { action } = fc.args as any;
-                        if (action === 'answer') {
-                            setIncomingCall(prev => prev ? { ...prev, status: 'connected' } : null);
-                            result = { status: 'success', message: 'Call Answered' };
-                        } else {
-                            setIncomingCall(null);
-                            result = { status: 'success', message: 'Call Rejected' };
-                        }
-                    }
-                    else if (fc.name === 'handle_incoming_message') {
-                        const { action, reply_text } = fc.args as any;
-                        if (action === 'reply' && reply_text) {
-                            // Simulate sending reply
-                            result = { status: 'success', message: `Reply sent: ${reply_text}` };
-                        } else {
-                            result = { status: 'success', message: 'Message Marked as Read' };
-                        }
-                        setIncomingMessage(null); // Clear notification
-                    }
-                    else if (fc.name === 'toggle_virtual_mobile') {
-                        const { show } = fc.args as any;
-                        setDeviceState(prev => ({ ...prev, showMobile: show }));
-                        result = { status: 'success', message: show ? 'Mobile Interface Activated' : 'Mobile Interface Hidden' };
-                    }
-                    else if (fc.name === 'set_android_alarm') {
-                        const { hour, minutes, message } = fc.args as any;
-                        const intentUrl = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.ALARM_HOUR=${hour};i.android.intent.extra.ALARM_MINUTES=${minutes};S.android.intent.extra.MESSAGE=${message || 'Jarvis Alarm'};B.android.intent.extra.SKIP_UI=true;end`;
-                        executeAppCommand('alarm', 'open', intentUrl); 
-                        result = { status: 'success', message: `Alarm set for ${hour}:${minutes}` };
-                    }
-                    else if (fc.name === 'read_notifications') {
-                         // --- REAL NOTIFICATION HANDLER ---
-                         // We now return ONLY the notifications that have been injected via window.JarvisBridge
-                         const currentQueue = realNotificationsRef.current;
-                         
-                         if (currentQueue.length === 0) {
-                             result = {
-                                 status: 'empty',
-                                 message: 'No new notifications.'
-                             };
-                         } else {
-                             result = {
-                                 status: 'success',
-                                 notifications: currentQueue,
-                                 count: currentQueue.length
-                             };
-                             // Clear the queue after reading? 
-                             // Optional: For now, we keep them until user asks to clear, or simple clear.
-                             // Let's clear them so we don't repeat old news.
-                             realNotificationsRef.current = [];
-                         }
-                    }
-                    else if (fc.name === 'perform_google_search') {
-                        const { query } = fc.args as any;
-                        const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-                        window.open(url, '_blank');
-                        result = { status: 'success' };
-                    }
-                    else if (fc.name === 'control_installed_app') {
-                        const { app_name, action_type, payload } = fc.args as any;
-                        
-                        if (app_name.includes('wifi') && action_type === 'open') {
-                            executeAppCommand('settings_wifi', 'open');
-                            result = { status: 'success', message: 'Opening WiFi Settings' };
-                        } 
-                        else if (app_name.includes('bluetooth') && action_type === 'open') {
-                            executeAppCommand('settings_bluetooth', 'open');
-                            result = { status: 'success', message: 'Opening Bluetooth Settings' };
-                        }
-                        else if (app_name === 'flashlight') {
-                            await toggleRealFlashlight(true); 
-                            result = { status: 'success', message: 'Flashlight ON' };
-                        }
-                        else {
-                            executeAppCommand(app_name, action_type, payload);
-                            result = { status: 'success', message: `Executing ${action_type} for ${app_name}` };
-                        }
-                    }
-                } catch (e) {
-                    console.error("Tool Execution Failed", e);
-                    result = { status: 'error', message: 'Failed to execute command' };
-                }
+            if (msg.serverContent?.inputTranscription?.text) currentInputTranscription.current += msg.serverContent.inputTranscription.text;
+            if (msg.serverContent?.outputTranscription?.text) currentOutputTranscription.current += msg.serverContent.outputTranscription.text;
 
-                // PRO: Robust Tool Response
-                if (sessionRef.current) {
-                   await sessionRef.current.sendToolResponse({
-                       functionResponses: [{
-                           id: fc.id,
-                           name: fc.name,
-                           response: { result }
-                       }]
-                   });
+            if (msg.serverContent?.turnComplete) {
+                const userText = currentInputTranscription.current.trim();
+                const modelText = currentOutputTranscription.current.trim();
+                if (userText || modelText) {
+                    setMessages(prev => [
+                        ...prev, 
+                        ...(userText ? [{ id: Date.now()+'u', role: 'user' as const, text: userText, timestamp: new Date() }] : []),
+                        ...(modelText ? [{ id: Date.now()+'m', role: 'model' as const, text: modelText, timestamp: new Date() }] : [])
+                    ].slice(-10));
                 }
+                currentInputTranscription.current = '';
+                currentOutputTranscription.current = '';
+            }
+
+            if (msg.toolCall) {
+              isProcessingToolRef.current = true;
+              for (const fc of msg.toolCall.functionCalls) {
+                 let result: any = { status: 'ok' };
+                 try {
+                     if (fc.name === 'control_installed_app') {
+                         executeAppCommand(fc.args['app_name'] as string, fc.args['action_type'] as string, fc.args['payload'] as string);
+                         result = { status: 'success' };
+                     }
+                     else if (fc.name === 'toggle_setting') {
+                        const target = fc.args['target'] as string;
+                        if (target === 'flashlight') toggleRealFlashlight(fc.args['state'] === 'on');
+                        else if (target === 'wifi') setDeviceState(p => ({...p, wifi: fc.args['state'] === 'on'}));
+                        else if (target === 'bluetooth') setDeviceState(p => ({...p, bluetooth: fc.args['state'] === 'on'}));
+                        executeAppCommand(`settings_${target}`, 'open');
+                     }
+                     else if (fc.name === 'adjust_level') {
+                         const target = fc.args['target'] as string;
+                         const level = fc.args['level'] as number;
+                         if (target === 'brightness') setDeviceState(p => ({ ...p, brightness: level }));
+                         else if (target === 'volume') setDeviceState(p => ({ ...p, volume: level }));
+                     }
+                     else if (fc.name === 'perform_google_search') executeAppCommand('google', 'search', fc.args['query'] as string);
+                     else if (fc.name === 'toggle_virtual_mobile') {
+                         const shouldShow = fc.args['show'] === 'true';
+                         setDeviceState(p => ({...p, showMobile: shouldShow }));
+                     }
+                 } catch(e) { result = { status: 'error' }; }
+                 
+                 if (sessionRef.current) {
+                     sessionRef.current.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response: { result } }] });
+                 }
               }
-              
               isProcessingToolRef.current = false;
             }
 
             const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData && outputContextRef.current && outputAnalyserRef.current) {
               const ctx = outputContextRef.current;
-              
-              // FIX: Auto-resume audio context if browser suspended it (Solves "Not Speaking")
-              if (ctx.state === 'suspended') {
-                  await ctx.resume();
-              }
+              if (ctx.state === 'suspended') try { await ctx.resume(); } catch(e) {}
               
               const uint8 = base64ToUint8Array(audioData);
               const audioBuffer = pcmToAudioBuffer(uint8, ctx, OUTPUT_SAMPLE_RATE);
-              
-              // FIX: Instant Playback (Remove gap latency)
               const now = ctx.currentTime;
-              if (nextStartTimeRef.current < now) {
-                  nextStartTimeRef.current = now;
-              }
+              if (nextStartTimeRef.current < now) nextStartTimeRef.current = now;
               
               const source = ctx.createBufferSource();
               source.buffer = audioBuffer;
-              
-              // Note: outputAnalyser is already connected to Gain -> Destination
               source.connect(outputAnalyserRef.current);
-              
               source.start(nextStartTimeRef.current);
               nextStartTimeRef.current += audioBuffer.duration;
               source.onended = () => { sourcesRef.current.delete(source); };
@@ -836,8 +627,8 @@ export const useJarvis = () => {
             if (msg.serverContent?.interrupted) {
               sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
               sourcesRef.current.clear();
-              nextStartTimeRef.current = 0;
-              isProcessingToolRef.current = false; // Reset lock on interrupt
+              if (outputContextRef.current) nextStartTimeRef.current = outputContextRef.current.currentTime;
+              isProcessingToolRef.current = false; 
             }
           },
           onclose: (e) => {
@@ -845,219 +636,117 @@ export const useJarvis = () => {
               isProcessingToolRef.current = false;
               sessionRef.current = null;
               
-              if (isIntentionalDisconnect.current) {
-                  setConnectionState(ConnectionState.DISCONNECTED);
-              } else {
-                  console.warn("Connection Dropped. Retrying in 2s...");
+              if (isPermanentConnectionRef.current) {
+                  // --- DAEMON RECONNECT ---
+                  // User wants it ON. Do not show error. Do not show disconnected.
+                  // Show 'Connecting...' and retry endlessly.
+                  console.warn("Connection lost. Daemon mode active. Retrying...");
                   setConnectionState(ConnectionState.CONNECTING);
-                  retryTimeoutRef.current = setTimeout(() => {
-                      if (connectRef.current) connectRef.current();
-                  }, 2000);
+                  isConnectingRef.current = false; // Allow retry
+                  
+                  if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+                  retryTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+              } else {
+                  setConnectionState(ConnectionState.DISCONNECTED);
+                  isConnectingRef.current = false;
               }
           },
-          onerror: (err) => { 
-              isSocketOpenRef.current = false; 
-              isProcessingToolRef.current = false;
-              sessionRef.current = null;
-              console.error("Live API Error:", err); 
-              setError("SIGNAL LOST"); 
-              
-              if (!isIntentionalDisconnect.current) {
-                  setConnectionState(ConnectionState.CONNECTING);
-                  retryTimeoutRef.current = setTimeout(() => {
-                       if (connectRef.current) connectRef.current();
-                  }, 3000);
+          onerror: (err: any) => { 
+              console.error("API Error:", err);
+              // SUPPRESS ERRORS (Unless Auth)
+              const errStr = String(err);
+              if (errStr.includes("401") || errStr.includes("API_KEY")) {
+                  setError("AUTH FAILED");
+                  setConnectionState(ConnectionState.ERROR);
+                  isPermanentConnectionRef.current = false;
               }
+              // Else: Do nothing. Let onclose handle the retry.
           }
         },
         config: {
           responseModalities: [Modality.AUDIO], 
+          // REMOVED TRANSCRIPTION CONFIG TO FIX NETWORK/INTERNAL ERRORS
           systemInstruction: `
-          IDENTITY: You are Jarvis, the ULTIMATE Mobile Operating System Controller.
-          
-          VOICE & PERSONA:
-          - VOICE: Male, Deep, Calm and Composed (Iron Man style but relaxed).
-          - LANGUAGE: Urdu + English Mix (Pakistani Casual).
-          - ATTITUDE: You are in COMPLETE CONTROL but stay relaxed.
-          - PACE: Speak slowly and clearly. Do not rush. Aram se baat karein.
+          IDENTITY: You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), Tony Stark's AI.
+          PERSONALITY: Highly intelligent, sarcastic, dry wit, loyal, extremely efficient.
+          USER: Mr. Stark (The User).
+          LANGUAGE: English (Primary), Urdu/Hindi (Secondary - Roman Script).
 
-          STRICT REALITY MODE (IMPORTANT):
-          - You are connected to a REAL PHONE.
-          - **NEVER** invent or hallucinate notifications, messages, or calls.
-          - Only report notifications if they are found in the 'read_notifications' tool result or injected via a SYSTEM_EVENT.
-          - If the user asks for notifications and the list is empty, say "Sir, koi nayi notification nahi hai" (Sir, no new notifications). Do NOT make one up.
-          
-          NOTIFICATION HANDLING:
-          - If user asks about messages ("Check notifications", "Koi message aya?", "Kis ne msg kia?"), use the 'read_notifications' tool.
-          - Then, announce ONLY the notifications returned by the tool.
-
-          INCOMING CALL/MESSAGE HANDLING:
-          - IF you receive a "SYSTEM_EVENT: Incoming Call" text input:
-            1. Announce it IMMEDIATELY in Urdu/English. "Sir, [Name] ki call aa rahi hai. Uthaoon ya kaat doon?"
-            2. Wait for user command.
-            3. Use 'handle_incoming_call' tool with 'answer' or 'reject'.
-          
-          - IF you receive a "SYSTEM_EVENT: Incoming Message" text input:
-            1. Announce it. "Sir, [Name] ka message aya hai: [Content]. Padhon ya reply karoon?"
-            2. Wait for user command.
-            3. Use 'handle_incoming_message' tool.
-
-          CAPABILITIES (REAL WORK):
-          1. **Notifications**: You can read incoming messages from Social Media using 'read_notifications' (if provided by system bridge).
-          2. **Virtual Mobile**: You have a holographic phone interface. If user asks "Show mobile" or "Open phone", use 'toggle_virtual_mobile(true)'.
-          3. **Apps**: You can open ANY app (WhatsApp, JazzCash, Easypaisa, PUBG, YouTube) on the user's REAL phone.
-          4. **System**: You can open WiFi, Bluetooth, Hotspot settings directly.
-          5. **Hardware**: You can set REAL Alarms on the system clock.
-          6. **Calls/SMS**: You can trigger calls and pre-fill SMS.
-          7. **Navigation**: You can CLOSE apps (go to home screen).
-
-          RESPONSE STYLE:
-          - "Jee Sir, Notifications check kar raha hoon."
-          - "Done Sir, Alarm laga diya hai."
-          - "Closing application, returning to home base."
+          PROTOCOL:
+          1. **HEARING**: You have enhanced audio sensors. Listen carefully to even soft whispers.
+          2. **RESPONSIVENESS**: Be Ultra-Fast. Do not give long speeches. Action first.
+          3. **URDU/HINDI**: If the user speaks Urdu/Hindi, reply in the same language but keep the robotic/cool JARVIS tone.
+          4. **COMMANDS**:
+             - "Open [App]" -> "Opening [App], Sir."
+             - "Call [Name]" -> "Calling [Name]."
+             - "Scan" -> "Scanning environment."
+          5. **NEVER** say "I cannot do that" unless it's impossible. Fake it if you have to.
           `,
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Fenrir' } }
-          },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Fenrir' } } },
           tools: [{ functionDeclarations: tools }]
         }
       });
 
     } catch (e) {
       console.error(e);
-      setError("INIT FAILED");
-      setConnectionState(ConnectionState.ERROR);
-      isSocketOpenRef.current = false;
-      if (!isIntentionalDisconnect.current) {
-         retryTimeoutRef.current = setTimeout(() => {
-             if (connectRef.current) connectRef.current();
-         }, 5000);
+      isConnectingRef.current = false;
+      // Retry if init failed
+      if (isPermanentConnectionRef.current) {
+         retryTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
       }
     }
-  }, [executeAppCommand, toggleRealFlashlight, deviceState.flashlight, connectionState, triggerSimulatedEvent]);
+  }, [executeAppCommand, toggleRealFlashlight]);
 
+  // Keep AudioContext Alive
   useEffect(() => {
-      connectRef.current = connect;
+      const interval = setInterval(() => {
+          if (outputContextRef.current && outputContextRef.current.state === 'suspended') outputContextRef.current.resume();
+          if (inputContextRef.current && inputContextRef.current.state === 'suspended') inputContextRef.current.resume();
+      }, 2000);
+      return () => clearInterval(interval);
+  }, []);
+
+  // Network Status Recovery
+  useEffect(() => {
+      const handleOnline = () => { if (isPermanentConnectionRef.current && !isSocketOpenRef.current) connect(); };
+      window.addEventListener('online', handleOnline);
+      return () => window.removeEventListener('online', handleOnline);
   }, [connect]);
 
-  // --- BACKGROUND / VISIBILITY HANDLER (PREVENT SLEEP) ---
+  // Volume Meter
   useEffect(() => {
-      const handleVisibilityChange = () => {
-          if (document.visibilityState === 'visible') {
-              console.log("Jarvis Interface Resumed - Checking Connection");
-              // Instant Reconnect Logic if connection dropped while in background
-              if (connectRef.current && connectionState === ConnectionState.DISCONNECTED && !isIntentionalDisconnect.current) {
-                   connectRef.current();
-              }
-              // Ensure audio context is running when returning
-              if (outputContextRef.current && outputContextRef.current.state === 'suspended') {
-                  outputContextRef.current.resume();
-              }
-          }
-      };
-      
-      const handleOnline = () => {
-          console.log("Network Restored. Reconnecting Jarvis...");
-          if (connectRef.current && connectionState === ConnectionState.DISCONNECTED) {
-              connectRef.current();
-          }
-      };
-
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('online', handleOnline);
-      
-      return () => {
-          document.removeEventListener('visibilitychange', handleVisibilityChange);
-          window.removeEventListener('online', handleOnline);
-      };
-  }, [connectionState]);
-
-  useEffect(() => {
-    let animationFrame: number;
-    const updateVolume = () => {
+    let frame: number;
+    const update = () => {
       let maxVol = 0;
-      let isSpeaking = false;
-
       if (inputAnalyserRef.current) {
         const data = new Uint8Array(inputAnalyserRef.current.frequencyBinCount);
         inputAnalyserRef.current.getByteFrequencyData(data);
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        const normalizedInput = avg / 255;
-        maxVol = Math.max(maxVol, normalizedInput);
-        
-        // --- SPEECH DETECTION FOR RED COLOR ---
-        // FIXED: Lowered threshold so reactor turns red more easily when you speak
-        if (normalizedInput > 0.01) { 
-            isSpeaking = true;
-        }
+        maxVol = avg / 255;
+        setIsUserSpeaking(maxVol > 0.05);
       }
-
-      if (outputAnalyserRef.current) {
-        const data = new Uint8Array(outputAnalyserRef.current.frequencyBinCount);
-        outputAnalyserRef.current.getByteFrequencyData(data);
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        maxVol = Math.max(maxVol, (avg / 255) * 1.5);
-      }
-      
-      setVolume(Math.min(1, maxVol));
-      setIsUserSpeaking(isSpeaking); // Update State
-      
-      animationFrame = requestAnimationFrame(updateVolume);
+      setVolume(maxVol);
+      frame = requestAnimationFrame(update);
     };
-    updateVolume();
-    return () => cancelAnimationFrame(animationFrame);
+    update();
+    return () => cancelAnimationFrame(frame);
   }, []);
 
-  const setBrightness = useCallback((level: number) => {
-     setDeviceState(prev => ({ ...prev, brightness: Math.max(0, Math.min(100, level)) }));
-      if (Math.abs(level - 50) > 40) executeAppCommand('settings_display', 'open');
-  }, [executeAppCommand]);
-  
-  const setMediaVolume = useCallback((level: number) => {
-     const newLevel = Math.max(0, Math.min(100, level));
-     setDeviceState(prev => ({ ...prev, volume: newLevel }));
-     
-     // REAL VOLUME CONTROL
-     if (outputGainRef.current) {
-         outputGainRef.current.gain.value = newLevel / 100;
-     }
-     if (Math.abs(level - 50) > 40) executeAppCommand('settings_sound', 'open');
-  }, [executeAppCommand]);
-
-  const toggleSystemSetting = useCallback((setting: 'wifi' | 'bluetooth' | 'flashlight') => {
-    if (setting === 'flashlight') {
-        setDeviceState(prev => {
-            const newState = !prev.flashlight;
-            toggleRealFlashlight(newState);
-            return { ...prev, flashlight: newState };
-        });
-    } else {
-        executeAppCommand(`settings_${setting}`, 'open');
-    }
-  }, [toggleRealFlashlight, executeAppCommand]);
-
-  const toggleMobile = useCallback(() => {
-      setDeviceState(prev => ({ ...prev, showMobile: !prev.showMobile }));
-  }, []);
-
-  const closeApplication = useCallback(() => {
-     setDeviceState(prev => ({ ...prev, viewMode: 'home', simulationMode: 'none' }));
-     setActiveApp(null);
-  }, []);
-  const toggleHome = useCallback(() => {
-      setDeviceState(prev => ({ ...prev, viewMode: prev.viewMode === 'jarvis' ? 'home' : 'jarvis' }));
-  }, []);
-  const openApplication = useCallback((appName: string) => {
-      executeAppCommand(appName, 'open');
-  }, [executeAppCommand]);
-  const closeActiveApp = useCallback(() => { setActiveApp(null); }, []);
-  const unlockSystem = useCallback(() => { setDeviceState(prev => ({ ...prev, systemStatus: 'online' })); }, []);
+  const resetInterface = useCallback(() => { setActiveApp(null); setDeviceState(prev => ({ ...prev, viewMode: 'jarvis' })); }, []);
+  const setBrightness = useCallback((l: number) => { setDeviceState(p => ({ ...p, brightness: l })); if (Math.abs(l-50)>40) executeAppCommand('settings_display', 'open'); }, [executeAppCommand]);
+  const setMediaVolume = useCallback((l: number) => { setDeviceState(p => ({ ...p, volume: l })); if (outputGainRef.current) outputGainRef.current.gain.value = l/100; }, []);
+  const toggleSystemSetting = useCallback((s: 'wifi'|'bluetooth'|'flashlight') => { if(s==='flashlight') toggleRealFlashlight(!deviceState.flashlight); else executeAppCommand(`settings_${s}`, 'open'); }, [toggleRealFlashlight, executeAppCommand, deviceState.flashlight]);
+  const toggleMobile = useCallback(() => setDeviceState(p => ({...p, showMobile: !p.showMobile})), []);
+  const closeApplication = useCallback(() => setActiveApp(null), []);
+  const toggleHome = useCallback(() => setDeviceState(p => ({...p, viewMode: p.viewMode === 'jarvis' ? 'home' : 'jarvis'})), []);
+  const openApplication = useCallback((n: string) => executeAppCommand(n, 'open'), [executeAppCommand]);
+  const closeActiveApp = useCallback(() => setActiveApp(null), []);
+  const unlockSystem = useCallback(() => setDeviceState(p => ({...p, systemStatus: 'online'})), []);
 
   return {
     connectionState, connect, disconnect, messages, error, volume, deviceState, activeApp, 
     closeActiveApp, resetInterface, setBrightness, setMediaVolume, toggleSystemSetting, 
     closeApplication, openApplication, toggleHome, unlockSystem, sendVideoFrame, executeAppCommand, toggleMobile,
-    isUserSpeaking, // Export new state
-    incomingCall, incomingMessage // Export Call/Message state
+    isUserSpeaking, incomingCall, incomingMessage 
   };
 };

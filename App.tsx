@@ -36,8 +36,8 @@ const App: React.FC = () => {
       executeAppCommand,
       toggleMobile,
       isUserSpeaking,
-      incomingCall, // New
-      incomingMessage // New
+      incomingCall, 
+      incomingMessage 
   } = useJarvis();
 
   const [showLogs, setShowLogs] = useState(false);
@@ -46,12 +46,13 @@ const App: React.FC = () => {
 
   const isConnected = connectionState === ConnectionState.CONNECTED;
   const isConnecting = connectionState === ConnectionState.CONNECTING;
+  const isError = connectionState === ConnectionState.ERROR;
 
   // Wake Word Handler
   const handleWake = useCallback(() => {
+      // Prevent double connection attempts
       if (connectionState === ConnectionState.DISCONNECTED && !isConnecting && deviceState.systemStatus === 'online') {
-          // Play a system sound if possible
-          const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_100KB_MP3.mp3'); // Placeholder beep
+          const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_100KB_MP3.mp3'); 
           audio.volume = 0.2;
           audio.play().catch(() => {});
           connect();
@@ -64,10 +65,8 @@ const App: React.FC = () => {
   const handleInteraction = () => {
       setHasInteracted(true);
       setBootSequence(true);
-      // Start listening for wake word after user has interacted once
       startListening();
       
-      // Enter fullscreen for immersion
       try {
           if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen();
@@ -76,7 +75,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-      // CRITICAL FIX: Stop listening if connected OR connecting to free up the microphone
+      // Stop listening if connected OR connecting to free up the microphone
       if (isConnected || isConnecting) {
           stopListening();
       } else if (hasInteracted && deviceState.systemStatus === 'online') {
@@ -88,7 +87,6 @@ const App: React.FC = () => {
   if (deviceState.systemStatus === 'shutdown') {
       return (
           <div className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-pointer" onClick={unlockSystem}>
-             {/* Subtle power indicator to show it's "off" but recoverable */}
              <div className="w-1 h-1 bg-gray-900 rounded-full animate-pulse" />
           </div>
       );
@@ -193,10 +191,10 @@ const App: React.FC = () => {
                     
                     <div className="flex flex-col items-end gap-1">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold tracking-[0.2em] text-cyan-300 hud-text">
-                                {isConnected ? 'ONLINE' : isListening ? 'STANDBY' : 'OFFLINE'}
+                            <span className={`text-xs font-bold tracking-[0.2em] hud-text ${isError ? 'text-red-500 animate-pulse' : 'text-cyan-300'}`}>
+                                {isConnected ? 'ONLINE' : isConnecting ? 'SYNCING...' : isError ? 'ERROR' : isListening ? 'STANDBY' : 'OFFLINE'}
                             </span>
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-400 shadow-[0_0_10px_cyan]' : isListening ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} />
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-400 shadow-[0_0_10px_cyan]' : isError ? 'bg-red-500 animate-bounce' : isListening ? 'bg-yellow-500 animate-pulse' : 'bg-red-900'}`} />
                         </div>
                         <div className="text-[10px] text-cyan-600 tracking-widest">VOICE MODULE: {isListening ? 'ACTIVE' : 'PAUSED'}</div>
                     </div>
@@ -209,8 +207,8 @@ const App: React.FC = () => {
                 
                 {/* ERROR ALERT */}
                 {error && (
-                    <div className="absolute top-24 bg-red-900/20 border border-red-500 text-red-400 px-6 py-2 rounded backdrop-blur-md max-w-md text-center shadow-[0_0_20px_rgba(239,68,68,0.4)]">
-                        <span className="font-bold block text-xs tracking-widest mb-1">SYSTEM ALERT</span>
+                    <div className="absolute top-24 bg-red-900/20 border border-red-500 text-red-400 px-6 py-2 rounded backdrop-blur-md max-w-md text-center shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-in slide-in-from-top">
+                        <span className="font-bold block text-xs tracking-widest mb-1">SYSTEM FAILURE</span>
                         {error}
                     </div>
                 )}
@@ -221,10 +219,10 @@ const App: React.FC = () => {
                     {/* CENTRAL VISUALIZER */}
                     <div className={`relative mb-8 transform transition-all duration-700 ${deviceState.simulationMode !== 'none' ? 'scale-75 opacity-50 blur-sm' : 'scale-100'}`}>
                         {/* Passed isUserSpeaking to Reactor */}
-                        <ArcReactor volume={volume} isActive={isConnected} isUserSpeaking={isUserSpeaking} />
+                        <ArcReactor volume={volume} isActive={isConnected} isUserSpeaking={isUserSpeaking} isError={isError} />
                         
                         {/* Standby Pulse */}
-                        {!isConnected && isListening && (
+                        {!isConnected && isListening && !isError && (
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="w-64 h-64 border border-cyan-500/20 rounded-full animate-ping opacity-20" />
                                 <div className="absolute mt-40 text-center">
@@ -240,10 +238,15 @@ const App: React.FC = () => {
                             <button
                             onClick={connect}
                             disabled={isConnecting}
-                            className="group relative px-6 py-2 border border-cyan-500/30 bg-cyan-900/10 hover:bg-cyan-500/20 rounded backdrop-blur-sm transition-all active:scale-95"
+                            className={`group relative px-6 py-2 border rounded backdrop-blur-sm transition-all active:scale-95
+                                ${isError 
+                                    ? 'border-red-500/50 bg-red-900/20 hover:bg-red-500/30' 
+                                    : 'border-cyan-500/30 bg-cyan-900/10 hover:bg-cyan-500/20'
+                                }`}
                             >
-                            <span className="text-xs font-bold tracking-[0.2em] text-cyan-400 group-hover:text-cyan-200">
-                                {isConnecting ? 'INITIALIZING...' : 'MANUAL OVERRIDE'}
+                            <span className={`text-xs font-bold tracking-[0.2em] group-hover:text-opacity-80
+                                ${isError ? 'text-red-400' : 'text-cyan-400'}`}>
+                                {isConnecting ? 'INITIALIZING...' : isError ? 'REBOOT SYSTEM' : 'MANUAL OVERRIDE'}
                             </span>
                             </button>
                         )}
@@ -286,8 +289,8 @@ const App: React.FC = () => {
                     onClose={toggleMobile}
                     onOpenApp={executeAppCommand}
                     batteryLevel={deviceState.batteryLevel}
-                    incomingCall={incomingCall} // New Prop
-                    incomingMessage={incomingMessage} // New Prop
+                    incomingCall={incomingCall} 
+                    incomingMessage={incomingMessage} 
                 />
 
             </main>

@@ -3,17 +3,21 @@ import React from 'react';
 interface ArcReactorProps {
   volume: number;
   isActive: boolean;
-  isUserSpeaking?: boolean; // New Prop
+  isUserSpeaking?: boolean;
+  isError?: boolean; // New Prop
 }
 
-export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUserSpeaking = false }) => {
-  // Scale base size + volume reactivity
-  const scale = 1 + volume * 0.5;
-  const glowIntensity = isActive ? 0.5 + volume : 0.2;
+export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUserSpeaking = false, isError = false }) => {
+  // Scale base size + volume reactivity (Much more sensitive now for "Hearing" visualization)
+  const scale = 1 + (volume * 1.5); 
+  const glowIntensity = isActive ? 0.5 + (volume * 2.0) : 0.2;
   
-  // COLOR LOGIC: Red if speaking, Cyan if Active/Idle, Gray if Off
+  // COLOR LOGIC: Red if Error or Speaking, Cyan if Active, Gray if Off
   let color = '100, 116, 139'; // Default Gray
-  if (isActive) {
+  
+  if (isError) {
+      color = '239, 68, 68'; // RED (Error)
+  } else if (isActive) {
       if (isUserSpeaking) {
           color = '239, 68, 68'; // RED (User Speaking)
       } else {
@@ -49,7 +53,7 @@ export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUser
         className="relative z-10 w-40 h-40 rounded-full border-4 flex items-center justify-center bg-black transition-all duration-75"
         style={{ 
             borderColor: `rgba(${color}, 0.8)`,
-            boxShadow: `0 0 ${20 + volume * 50}px rgba(${color}, ${glowIntensity})`,
+            boxShadow: `0 0 ${20 + volume * 100}px rgba(${color}, ${glowIntensity})`, // Increased Glow
             transform: `scale(${scale})`
         }}
       >
@@ -62,7 +66,7 @@ export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUser
       </div>
       
       {/* Decorative HUD Lines */}
-      {isActive && (
+      {(isActive || isError) && (
         <>
             <div 
                 className="absolute top-1/2 left-0 w-full h-[1px] -translate-y-1/2" 

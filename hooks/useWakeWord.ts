@@ -15,7 +15,7 @@ export const useWakeWord = (onWake: () => void) => {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    // Set language to Urdu (Pakistan)
+    // Set language to Urdu (Pakistan) but this might vary by device support
     recognition.lang = 'ur-PK'; 
 
     recognition.onresult = (event: any) => {
@@ -28,15 +28,19 @@ export const useWakeWord = (onWake: () => void) => {
       // console.log("Wake Word Debug:", transcript);
 
       // Check for keywords: Jarvis, System, Activate, Hello, Urdu phrases
+      // Added more variations for phonetic matches in Urdu/English mix
       if (
           transcript.includes('jarvis') || 
           transcript.includes('service') || 
+          transcript.includes('javed') || // Common misinterpretation
+          transcript.includes('janis') || 
           transcript.includes('activate') ||
           transcript.includes('on karo') ||
           transcript.includes('start') ||
           transcript.includes('shuru karo') ||
           transcript.includes('suno') ||
-          transcript.includes('hello')
+          transcript.includes('hello') ||
+          transcript.includes('online')
       ) {
         recognition.stop();
         onWake();

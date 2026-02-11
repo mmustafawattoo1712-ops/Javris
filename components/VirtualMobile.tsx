@@ -327,7 +327,12 @@ export const VirtualMobile: React.FC<VirtualMobileProps> = ({ isVisible, onClose
                           {[1,2,3,4,5,6,7,8,9,'*',0,'#'].map(n => (
                               <button 
                                 key={n} 
-                                onClick={() => { if(navigator.vibrate) navigator.vibrate(10); setDialNumber(p => p + n) }}
+                                onClick={() => { 
+                                    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                                        navigator.vibrate(10);
+                                    }
+                                    setDialNumber(p => p + n.toString()); 
+                                }}
                                 className="w-20 h-20 rounded-full bg-gray-800 text-white text-3xl font-medium flex items-center justify-center active:bg-gray-700 hover:bg-gray-750 transition-colors"
                               >
                                   {n}

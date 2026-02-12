@@ -3,6 +3,7 @@ package com.jarvis.pk;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,39 +18,55 @@ public class JarvisPipeline {
     }
 
     public void processVoiceCommand(String aiJsonCommand) {
-        // Example JSON: { "app": "youtube", "action": "search", "payload": "Iron Man Trailer", "auto_play": true }
+        // aiJsonCommand string is expected to contain "package_name" or specific keywords if not full JSON
         
-        // 1. PARSE JSON (Simplified)
-        if (aiJsonCommand.contains("youtube") && aiJsonCommand.contains("search")) {
-            String query = "Iron Man Trailer"; // Extracted from JSON
-            
-            // 2. INTENT: OPEN APP & SEARCH
-            Intent intent = new Intent(Intent.ACTION_SEARCH);
-            intent.setPackage("com.google.android.youtube");
-            intent.putExtra("query", query);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(intent);
+        // 1. GLOBAL ACTIONS
+        if (aiJsonCommand.contains("home") || aiJsonCommand.contains("close")) {
+             JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+             if (service != null) service.goHome();
+             return;
+        }
 
-            // 3. ACCESSIBILITY: TAP FIRST RESULT
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
-                if (service != null) {
-                    // Try to click the first item that matches the query words
-                    boolean clicked = service.clickFirstItemWithText(query);
-                    if (!clicked) service.clickFirstItemWithText("video"); // Fallback
+        if (aiJsonCommand.contains("back")) {
+             JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+             if (service != null) service.goBack();
+             return;
+        }
+
+        // 2. MEDIA CONTROL
+        if (aiJsonCommand.contains("pause")) JarvisMediaControl.executeCommand(context, "pause");
+        if (aiJsonCommand.contains("play")) JarvisMediaControl.executeCommand(context, "play");
+        if (aiJsonCommand.contains("next")) JarvisMediaControl.executeCommand(context, "next");
+
+        // 3. DYNAMIC APP LAUNCHING (Primitive JSON parsing)
+        // Checks if command contains a package name structure (com.xxxx.xxxx)
+        if (aiJsonCommand.contains("com.")) {
+            String[] parts = aiJsonCommand.split("\""); // primitive split for simple JSON
+            for (String part : parts) {
+                if (part.startsWith("com.") && part.contains(".")) {
+                    launchAppByPackage(part);
+                    break;
                 }
-            }, 3000); // Wait 3s for app load
+            }
+        } 
+        // Fallback for keyword-based opening if package not found in string
+        else if (aiJsonCommand.contains("youtube")) {
+            launchAppByPackage("com.google.android.youtube");
+        } else if (aiJsonCommand.contains("whatsapp")) {
+            launchAppByPackage("com.whatsapp");
         }
-        
-        if (aiJsonCommand.contains("pause")) {
-            // 4. MEDIA SESSION CONTROL
-            JarvisMediaControl.toggleMediaPlayback(context);
-        }
+    }
 
-        if (aiJsonCommand.contains("home")) {
-            // 5. ACCESSIBILITY: HOME
-            JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
-            if (service != null) service.goHome();
+    private void launchAppByPackage(String packageName) {
+        PackageManager pm = context.getPackageManager();
+        try {
+            Intent intent = pm.getLaunchIntentForPackage(packageName);
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+            }
+        } catch (Exception e) {
+            // App not found
         }
     }
 }

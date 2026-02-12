@@ -1,7 +1,7 @@
 
 export interface Message {
   id: string;
-  role: 'user' | 'model' | 'system' | 'thought'; // Added 'thought' for reasoning logs
+  role: 'user' | 'model' | 'system' | 'thought'; 
   text: string;
   timestamp: Date;
 }
@@ -11,13 +11,13 @@ export enum ConnectionState {
   CONNECTING = 'connecting',
   CONNECTED = 'connected',
   ERROR = 'error',
-  OFFLINE_READY = 'offline_ready', // New state for Local LLM
+  OFFLINE_READY = 'offline_ready', 
 }
 
 export type AIProvider = 'gemini' | 'ollama';
 
 export interface AudioVisualizerState {
-  volume: number; // 0 to 1
+  volume: number; 
   isSpeaking: boolean;
 }
 
@@ -33,11 +33,10 @@ export interface DeviceState {
   viewMode: 'jarvis' | 'home';
   showMobile: boolean; 
   systemStatus: 'online' | 'locked' | 'shutdown';
-  simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'satellite' | 'suit' | 'sentry' | 'element' | 'flight' | 'database';
-  aiProvider: AIProvider; // Track which brain is active
-  isDeviceAdmin: boolean; // Is Device Admin Active?
-  showAdminModal: boolean; // Show the permission request screen?
-  wakeLockActive: boolean; // Is Wake Lock held?
+  // REMOVED FAKE MODES (Suit, Flight, Element, Sentry)
+  simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'database';
+  aiProvider: AIProvider; 
+  wakeLockActive: boolean; 
 }
 
 export interface IncomingCall {
@@ -62,4 +61,21 @@ export interface NotificationItem {
     title: string;
     text: string;
     timestamp: number;
+}
+
+// --- GLOBAL WINDOW EXTENSION FOR ANDROID BRIDGE ---
+declare global {
+  interface Window {
+    JarvisBridge?: {
+      toggleSystemSetting: (setting: string, state: boolean) => void;
+      launchApp: (packageName: string, action: string, payload: string) => void;
+      performAction: (action: string) => void;
+      controlMedia: (command: string) => void;
+      lockNow: () => void;
+      acquireWakeLock: () => void;
+      releaseWakeLock: () => void;
+    };
+    webkitSpeechRecognition?: any;
+    SpeechRecognition?: any;
+  }
 }

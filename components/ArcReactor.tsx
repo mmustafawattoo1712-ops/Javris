@@ -1,45 +1,46 @@
+
 import React from 'react';
 
 interface ArcReactorProps {
   volume: number;
   isActive: boolean;
   isUserSpeaking?: boolean;
-  isError?: boolean; // New Prop
+  isError?: boolean; 
 }
 
+// Renamed internally to VoiceVisualizer to emphasize real-world utility over fiction
 export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUserSpeaking = false, isError = false }) => {
-  // Scale base size + volume reactivity (Much more sensitive now for "Hearing" visualization)
   const scale = 1 + (volume * 1.5); 
   const glowIntensity = isActive ? 0.5 + (volume * 2.0) : 0.2;
   
-  // COLOR LOGIC: Red if Error or Speaking, Cyan if Active, Gray if Off
+  // COLOR SYSTEM: Red (Alert/Speak), Cyan (Idle/Listening)
   let color = '100, 116, 139'; // Default Gray
   
   if (isError) {
       color = '239, 68, 68'; // RED (Error)
   } else if (isActive) {
       if (isUserSpeaking) {
-          color = '239, 68, 68'; // RED (User Speaking)
+          color = '239, 68, 68'; // RED (Input)
       } else {
-          color = '0, 225, 255'; // CYAN (Jarvis Idle/Thinking/Speaking)
+          color = '6, 182, 212'; // CYAN (System Ready)
       }
   }
 
   return (
     <div className="relative flex items-center justify-center w-64 h-64 md:w-96 md:h-96 transition-colors duration-300">
-      {/* Outer Rotating Ring */}
+      {/* Status Ring */}
       <div 
         className={`absolute inset-0 border-4 border-dashed rounded-full animate-[spin_10s_linear_infinite] opacity-30`}
         style={{ borderColor: `rgba(${color}, 0.3)` }}
       />
       
-      {/* Middle Static Ring */}
+      {/* Static Boundary */}
       <div 
         className="absolute inset-4 border-2 rounded-full opacity-50"
         style={{ borderColor: `rgba(${color}, 0.5)` }}
       />
 
-      {/* Core Glow */}
+      {/* Audio Reactive Core Glow */}
       <div 
         className="absolute w-32 h-32 rounded-full blur-2xl transition-all duration-75 ease-out"
         style={{ 
@@ -48,24 +49,21 @@ export const ArcReactor: React.FC<ArcReactorProps> = ({ volume, isActive, isUser
         }}
       />
 
-      {/* The Core itself */}
+      {/* Main Interface Core */}
       <div 
         className="relative z-10 w-40 h-40 rounded-full border-4 flex items-center justify-center bg-black transition-all duration-75"
         style={{ 
             borderColor: `rgba(${color}, 0.8)`,
-            boxShadow: `0 0 ${20 + volume * 100}px rgba(${color}, ${glowIntensity})`, // Increased Glow
+            boxShadow: `0 0 ${20 + volume * 100}px rgba(${color}, ${glowIntensity})`,
             transform: `scale(${scale})`
         }}
       >
-        <div 
-            className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center"
-        >
-             {/* Inner Details */}
-             <div className="w-4 h-4 bg-white rounded-full shadow-[0_0_10px_white]" />
+        <div className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center backdrop-blur-sm">
+             <div className={`w-4 h-4 bg-white rounded-full shadow-[0_0_10px_white] ${isActive ? 'animate-pulse' : ''}`} />
         </div>
       </div>
       
-      {/* Decorative HUD Lines */}
+      {/* System Axis Lines */}
       {(isActive || isError) && (
         <>
             <div 

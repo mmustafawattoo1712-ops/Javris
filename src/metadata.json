@@ -1,0 +1,9 @@
+{
+  "name": "J.A.R.V.I.S. - MK85 Interface",
+  "description": "Tony Stark inspired AI Interface with Deep Linking capabilities.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation",
+    "camera"
+  ]
+}

@@ -1,0 +1,5 @@
+
+<resources>
+    <string name="app_name">J.A.R.V.I.S.</string>
+    <string name="admin_description">Allow J.A.R.V.I.S. to lock the screen and secure the device.</string>
+</resources>

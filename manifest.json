@@ -1,0 +1,21 @@
+{
+  "short_name": "J.A.R.V.I.S.",
+  "name": "J.A.R.V.I.S. MK85 Interface",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/6134/6134346.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/6134/6134346.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "orientation": "portrait"
+}

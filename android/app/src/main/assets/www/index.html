@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>J.A.R.V.I.S. Bootloader</title>
+    <style>
+        body {
+            background-color: #000000;
+            color: #06B6D4;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+            border: 1px solid #06B6D4;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+            animation: pulse 2s infinite;
+        }
+        h1 {
+            letter-spacing: 5px;
+            margin-bottom: 10px;
+        }
+        p {
+            font-size: 12px;
+            letter-spacing: 2px;
+            opacity: 0.8;
+        }
+        .loader {
+            width: 50px;
+            height: 50px;
+            border: 3px solid transparent;
+            border-top: 3px solid #06B6D4;
+            border-radius: 50%;
+            margin: 20px auto;
+            animation: spin 1s linear infinite;
+        }
+        .note {
+            margin-top: 30px;
+            font-size: 10px;
+            color: #444;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 10px rgba(6, 182, 212, 0.1); }
+            50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.5); }
+            100% { box-shadow: 0 0 10px rgba(6, 182, 212, 0.1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>J.A.R.V.I.S.</h1>
+        <div class="loader"></div>
+        <p>SYSTEM INITIALIZING...</p>
+        <p>WAITING FOR UI UPDATE</p>
+    </div>
+    
+    <div class="note">
+        If this screen persists, please run:<br>
+        > <b>npm run build</b> <br>
+        in your project terminal.
+    </div>
+</body>
+</html>

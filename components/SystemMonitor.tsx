@@ -1,6 +1,6 @@
 import React from 'react';
-import { Wifi, Bluetooth, Battery, BatteryCharging, MapPin, Zap, Radio, Sun, Volume2, AudioLines } from 'lucide-react';
-import { DeviceState } from '../types';
+import { Wifi, Bluetooth, Battery, BatteryCharging, MapPin, Zap, AudioLines, Cloud, Server, BrainCircuit, Sun, Eye } from 'lucide-react';
+import { DeviceState, ConnectionState } from '../types';
 
 interface SystemMonitorProps {
   isConnected: boolean;
@@ -8,10 +8,11 @@ interface SystemMonitorProps {
   setBrightness: (level: number) => void;
   setMediaVolume: (level: number) => void;
   toggleSystemSetting: (setting: 'wifi' | 'bluetooth' | 'flashlight') => void;
+  toggleProvider?: () => void; // New prop
 }
 
-export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, deviceState, setBrightness, setMediaVolume, toggleSystemSetting }) => {
-  const borderColor = isConnected ? 'border-cyan-500/30' : 'border-gray-800';
+export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, deviceState, setBrightness, setMediaVolume, toggleSystemSetting, toggleProvider }) => {
+  const borderColor = isConnected || deviceState.aiProvider === 'ollama' ? 'border-cyan-500/30' : 'border-gray-800';
 
   return (
     <div className={`
@@ -22,12 +23,31 @@ export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, devic
       {/* HUD Header */}
       <div className={`p-3 rounded-lg border bg-black/60 backdrop-blur-md flex flex-col gap-3 ${borderColor}`}>
         <div className="flex justify-between items-center border-b border-gray-800 pb-2">
-            <span className="text-[10px] font-tech text-gray-400">DEVICE LINK</span>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-cyan-500 animate-pulse' : 'bg-red-900'}`} />
+            <span className="text-[10px] font-tech text-gray-400">JARVIS SYSTEM</span>
+            <div className={`flex items-center gap-2`}>
+                <span className="text-[8px] font-mono text-cyan-600">
+                    {deviceState.aiProvider === 'gemini' ? 'CLOUD' : 'LOCAL'}
+                </span>
+                <div className={`w-2 h-2 rounded-full ${isConnected || deviceState.aiProvider === 'ollama' ? 'bg-cyan-500 animate-pulse' : 'bg-red-900'}`} />
+            </div>
         </div>
         
+        {/* BRAIN SWITCHER */}
+        <button 
+            onClick={toggleProvider}
+            className={`flex items-center justify-between p-2 rounded border transition-all duration-300 ${deviceState.aiProvider === 'gemini' ? 'bg-blue-900/20 border-blue-500/30' : 'bg-green-900/20 border-green-500/30'}`}
+        >
+            <div className="flex items-center gap-2">
+                {deviceState.aiProvider === 'gemini' ? <Cloud className="w-3 h-3 text-blue-400" /> : <Server className="w-3 h-3 text-green-400" />}
+                <span className="text-[9px] font-mono text-gray-300">
+                    {deviceState.aiProvider === 'gemini' ? 'JARVIS AI' : 'OLLAMA CORE'}
+                </span>
+            </div>
+            <BrainCircuit className="w-3 h-3 text-gray-500" />
+        </button>
+
         {/* Battery Module */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
                 {deviceState.isCharging ? 
                     <BatteryCharging className={`w-4 h-4 ${deviceState.batteryLevel && deviceState.batteryLevel < 20 ? 'text-red-500' : 'text-cyan-400'}`} /> : 
@@ -38,25 +58,18 @@ export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, devic
             <span className="text-[9px] text-gray-500 uppercase">{deviceState.isCharging ? 'CHARGING' : 'DRAINING'}</span>
         </div>
 
-        {/* Location Module */}
-        <div className="flex items-center justify-between">
-             <div className="flex items-center gap-2">
-                <MapPin className={`w-4 h-4 ${deviceState.location ? 'text-cyan-400' : 'text-gray-600'}`} />
-                <span className="text-[9px] font-mono tracking-tighter truncate max-w-[80px]">
-                    {deviceState.location || "SEARCHING..."}
-                </span>
-             </div>
-        </div>
+        {/* Wake Lock Indicator (Only if Active) */}
+        {deviceState.wakeLockActive && (
+            <div className="flex items-center justify-between border-t border-gray-800/50 pt-2 animate-pulse">
+                <div className="flex items-center gap-2">
+                    <Sun className="w-3 h-3 text-yellow-500" />
+                    <span className="text-[9px] text-yellow-500 font-bold">ALWAYS ON</span>
+                </div>
+            </div>
+        )}
 
         {/* Brightness Module with Slider */}
         <div className="flex flex-col gap-1 pt-1 border-t border-gray-800/50">
-            <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-2">
-                    <Sun className={`w-4 h-4 ${deviceState.brightness > 50 ? 'text-yellow-400' : 'text-gray-600'}`} />
-                    <span className="text-[9px] font-mono tracking-widest text-gray-500">LUMINOSITY</span>
-                 </div>
-                 <span className="text-[10px] font-mono text-cyan-400">{deviceState.brightness}%</span>
-            </div>
             <input 
                 type="range" 
                 min="0" 
@@ -64,25 +77,6 @@ export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, devic
                 value={deviceState.brightness}
                 onChange={(e) => setBrightness(parseInt(e.target.value))}
                 className="w-full h-1 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:accent-cyan-400 focus:outline-none"
-            />
-        </div>
-
-        {/* Volume Module with Slider */}
-        <div className="flex flex-col gap-1 pt-1 border-t border-gray-800/50">
-            <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-2">
-                    <Volume2 className={`w-4 h-4 ${deviceState.volume > 50 ? 'text-green-400' : 'text-gray-600'}`} />
-                    <span className="text-[9px] font-mono tracking-widest text-gray-500">AUDIO GAIN</span>
-                 </div>
-                 <span className="text-[10px] font-mono text-green-400">{deviceState.volume}%</span>
-            </div>
-            <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={deviceState.volume}
-                onChange={(e) => setMediaVolume(parseInt(e.target.value))}
-                className="w-full h-1 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-green-500 hover:accent-green-400 focus:outline-none"
             />
         </div>
       </div>
@@ -125,22 +119,15 @@ export const SystemMonitor: React.FC<SystemMonitorProps> = ({ isConnected, devic
              <span className="text-[8px] font-bold tracking-widest text-gray-500">TORCH</span>
          </button>
 
-         {/* Noise Reduction (Replacing 'Net') */}
+         {/* Status */}
          <div className={`
             p-2 rounded border flex flex-col items-center justify-center gap-1 transition-colors duration-300
             ${isConnected ? 'bg-green-900/30 border-green-500/50' : 'bg-black/40 border-gray-800'}
          `}>
              <AudioLines className={`w-5 h-5 ${isConnected ? 'text-green-400' : 'text-gray-600'}`} />
-             <span className="text-[8px] font-bold tracking-widest text-gray-500">N.R. ACTIVE</span>
+             <span className="text-[8px] font-bold tracking-widest text-gray-500">ACTIVE</span>
          </div>
       </div>
-      
-      {/* Decorative Scanner Bar */}
-      {isConnected && (
-          <div className="w-full h-1 bg-gray-900 rounded overflow-hidden">
-             <div className="h-full bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-1/2 animate-[shimmer_2s_infinite]" />
-          </div>
-      )}
     </div>
   );
 };

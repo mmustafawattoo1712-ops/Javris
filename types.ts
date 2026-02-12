@@ -1,7 +1,7 @@
 
 export interface Message {
   id: string;
-  role: 'user' | 'model' | 'system';
+  role: 'user' | 'model' | 'system' | 'thought'; // Added 'thought' for reasoning logs
   text: string;
   timestamp: Date;
 }
@@ -11,7 +11,10 @@ export enum ConnectionState {
   CONNECTING = 'connecting',
   CONNECTED = 'connected',
   ERROR = 'error',
+  OFFLINE_READY = 'offline_ready', // New state for Local LLM
 }
+
+export type AIProvider = 'gemini' | 'ollama';
 
 export interface AudioVisualizerState {
   volume: number; // 0 to 1
@@ -28,12 +31,15 @@ export interface DeviceState {
   brightness: number;
   volume: number;
   viewMode: 'jarvis' | 'home';
-  showMobile: boolean; // New state for Virtual Android
+  showMobile: boolean; 
   systemStatus: 'online' | 'locked' | 'shutdown';
   simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'satellite' | 'suit' | 'sentry' | 'element' | 'flight' | 'database';
+  aiProvider: AIProvider; // Track which brain is active
+  isDeviceAdmin: boolean; // Is Device Admin Active?
+  showAdminModal: boolean; // Show the permission request screen?
+  wakeLockActive: boolean; // Is Wake Lock held?
 }
 
-// --- NEW TYPES FOR CALLS & MESSAGES ---
 export interface IncomingCall {
     id: string;
     name: string;
@@ -46,7 +52,7 @@ export interface IncomingMessage {
     id: string;
     sender: string;
     content: string;
-    app: string; // Changed from enum to string to support ALL real apps
+    app: string;
     timestamp: Date;
 }
 

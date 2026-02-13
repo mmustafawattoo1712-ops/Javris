@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       'process.env': JSON.stringify(env)
     },
     build: {
-      outDir: 'android/app/src/main/assets/www', 
+      outDir: 'app/src/main/assets/www', 
       emptyOutDir: true,
       rollupOptions: {
         output: {

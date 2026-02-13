@@ -33,7 +33,6 @@ export interface DeviceState {
   viewMode: 'jarvis' | 'home';
   showMobile: boolean; 
   systemStatus: 'online' | 'locked' | 'shutdown';
-  // REMOVED FAKE MODES (Suit, Flight, Element, Sentry)
   simulationMode: 'none' | 'scanning' | 'hacking' | 'analysis' | 'database';
   aiProvider: AIProvider; 
   wakeLockActive: boolean; 
@@ -65,6 +64,11 @@ export interface NotificationItem {
 
 // --- GLOBAL WINDOW EXTENSION FOR ANDROID BRIDGE ---
 declare global {
+  interface AIStudio {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+  }
+
   interface Window {
     JarvisBridge?: {
       toggleSystemSetting: (setting: string, state: boolean) => void;
@@ -72,10 +76,15 @@ declare global {
       performAction: (action: string) => void;
       controlMedia: (command: string) => void;
       lockNow: () => void;
+      unlockDevice: () => void;
       acquireWakeLock: () => void;
       releaseWakeLock: () => void;
+      sendWhatsAppMessage: (name: string, message: string) => void;
+      makePhoneCall: (name: string) => void;
+      getLatestNotification: () => string;
     };
     webkitSpeechRecognition?: any;
     SpeechRecognition?: any;
+    aistudio?: AIStudio;
   }
 }

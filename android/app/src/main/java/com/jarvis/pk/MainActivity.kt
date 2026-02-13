@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Full Screen Mode Configuration
+        // Full Screen Mode
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -49,17 +49,14 @@ class MainActivity : AppCompatActivity() {
         settings.allowFileAccessFromFileURLs = true
         settings.allowUniversalAccessFromFileURLs = true
         
-        // Inject the Native Interface (Bridge)
         webView.addJavascriptInterface(WebAppInterface(this), "JarvisBridge")
 
-        // Permission Handling for Camera/Mic inside WebView
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest?) {
                 request?.grant(request.resources)
             }
         }
         
-        // Handle External Links (WhatsApp, Tel, etc.)
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 if (url != null && (url.startsWith("intent://") || url.startsWith("tel:") || url.startsWith("whatsapp:") || url.startsWith("market:"))) {
@@ -77,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         startJarvisService()
         ignoreBatteryOptimizations()
 
-        // Loads index.html from Assets (Output from Vite Build)
+        // Loads index.html from Assets
         webView.loadUrl("file:///android_asset/www/index.html")
     }
 

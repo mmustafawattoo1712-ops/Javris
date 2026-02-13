@@ -1,3 +1,4 @@
+
 export interface Message {
   id: string;
   role: 'user' | 'model' | 'system' | 'thought'; 
@@ -63,6 +64,11 @@ export interface NotificationItem {
 
 // --- GLOBAL WINDOW EXTENSION FOR ANDROID BRIDGE ---
 declare global {
+  interface AIStudio {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+  }
+
   interface Window {
     JarvisBridge?: {
       toggleSystemSetting: (setting: string, state: boolean) => void;
@@ -70,10 +76,15 @@ declare global {
       performAction: (action: string) => void;
       controlMedia: (command: string) => void;
       lockNow: () => void;
+      unlockDevice: () => void;
       acquireWakeLock: () => void;
       releaseWakeLock: () => void;
+      sendWhatsAppMessage: (name: string, message: string) => void;
+      makePhoneCall: (name: string) => void;
+      getLatestNotification: () => string;
     };
     webkitSpeechRecognition?: any;
     SpeechRecognition?: any;
+    aistudio?: AIStudio;
   }
 }

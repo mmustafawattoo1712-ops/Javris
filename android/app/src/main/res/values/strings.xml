@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Jarvis AI</string>
     <string name="admin_description">Allow Jarvis to lock screen and manage device security.</string>
+    <string name="accessibility_description">Allow J.A.R.V.I.S. to automate tasks, read screen content, and interact with applications on your behalf.</string>
 </resources>

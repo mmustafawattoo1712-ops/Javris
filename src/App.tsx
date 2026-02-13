@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Mic, Power, Activity, Terminal, Fingerprint, ScanFace, Globe, ShieldCheck, Lock, LogIn } from 'lucide-react';
 import { useJarvis } from './hooks/useJarvis';
@@ -45,6 +46,27 @@ const App: React.FC = () => {
   const [showLogs, setShowLogs] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false); 
   const [bootSequence, setBootSequence] = useState(false);
+  const [apiKeyVerified, setApiKeyVerified] = useState(false);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setApiKeyVerified(hasKey);
+      } else {
+        // Fallback for environments without AI Studio injection
+        setApiKeyVerified(true);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+      if(window.aistudio) {
+          await window.aistudio.openSelectKey();
+          setApiKeyVerified(true);
+      }
+  };
 
   // Consider "Offline Ready" as Connected for UI purposes
   const isConnected = connectionState === ConnectionState.CONNECTED || connectionState === ConnectionState.OFFLINE_READY;
@@ -82,6 +104,23 @@ const App: React.FC = () => {
           startListening();
       }
   }, [isConnected, isConnecting, hasInteracted, startListening, stopListening, deviceState.systemStatus]);
+
+  if (!apiKeyVerified && window.aistudio) {
+      return (
+          <div className="fixed inset-0 bg-black flex items-center justify-center text-cyan-400 font-mono flex-col gap-4 z-[9999]">
+              <div className="text-xl tracking-widest font-bold">AUTHENTICATION REQUIRED</div>
+              <p className="text-xs text-cyan-700">MK-85 PROTOCOL SECURE ACCESS</p>
+              <button onClick={handleSelectKey} className="border border-cyan-500 px-6 py-2 hover:bg-cyan-900/30 transition-all mt-4 text-sm tracking-wider">
+                  INSERT API KEY
+              </button>
+              <div className="text-[10px] text-gray-500 mt-8">
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="underline hover:text-cyan-500">
+                      Billing Information
+                  </a>
+              </div>
+          </div>
+      );
+  }
 
   if (deviceState.systemStatus === 'shutdown') {
       return (

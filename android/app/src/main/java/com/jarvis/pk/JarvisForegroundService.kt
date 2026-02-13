@@ -32,7 +32,7 @@ class JarvisForegroundService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("J.A.R.V.I.S.")
             .setContentText("System is Online and Listening...")
-            .setSmallIcon(android.R.drawable.ic_dialog_info) 
+            .setSmallIcon(R.drawable.ic_launcher) 
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setOngoing(true)
             .build()

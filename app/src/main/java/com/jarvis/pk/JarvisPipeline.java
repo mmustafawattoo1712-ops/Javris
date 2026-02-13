@@ -17,8 +17,6 @@ public class JarvisPipeline {
     }
 
     public void processVoiceCommand(String aiJsonCommand) {
-        // aiJsonCommand string is expected to contain "package_name" or specific keywords
-        
         // 1. GLOBAL ACTIONS
         if (aiJsonCommand.contains("home") || aiJsonCommand.contains("close")) {
              JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
